@@ -8,72 +8,78 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Configuración fija de examen por bloque (autoridad en backend)
+const EXAMEN_BLOQUES = {
+  1: [{ idMateria: 2, cantidad: 16 }, { idMateria: 1, cantidad: 8 },  { idMateria: 3, cantidad: 16 }],
+  2: [{ idMateria: 2, cantidad: 12 }, { idMateria: 1, cantidad: 8 },  { idMateria: 4, cantidad: 20 }],
+  3: [{ idMateria: 2, cantidad: 8 },  { idMateria: 1, cantidad: 16 }, { idMateria: 5, cantidad: 16 }],
+  4: [{ idMateria: 7, cantidad: 8 },  { idMateria: 1, cantidad: 16 }, { idMateria: 6, cantidad: 16 }],
+  5: [{ idMateria: 2, cantidad: 20 }, { idMateria: 1, cantidad: 8 },  { idMateria: 8, cantidad: 12 }],
+  6: [{ idMateria: 2, cantidad: 8 },  { idMateria: 4, cantidad: 16 }, { idMateria: 9, cantidad: 16 }],
+};
+
+function shuffleArray(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
 // GET /api/bloques
 app.get('/api/bloques', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM bloques ORDER BY id_bloque');
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: 'Error al obtener bloques' });
   }
 });
 
-// GET /api/bloques/:id/materias
-app.get('/api/bloques/:id/materias', async (req, res) => {
-  const { id } = req.params;
+// GET /api/examen/iniciar?idBloque=1
+// Devuelve solo los IDs de las preguntas seleccionadas (sin contenido)
+app.get('/api/examen/iniciar', async (req, res) => {
+  const { idBloque } = req.query;
+  const config = EXAMEN_BLOQUES[idBloque];
+  if (!config) return res.status(400).json({ error: 'Bloque inválido' });
+
   try {
-    const result = await pool.query(
-      `SELECT m.id_materia, m.nombre, COUNT(p.id) AS total_preguntas
-       FROM materias m
-       JOIN materias_por_bloque mb ON m.id_materia = mb.id_materia
-       LEFT JOIN preguntas p ON p.id_materia = m.id_materia AND p.id_bloque = mb.id_bloque
-       WHERE mb.id_bloque = $1
-       GROUP BY m.id_materia, m.nombre
-       ORDER BY m.id_materia`,
-      [id]
+    const grupos = await Promise.all(
+      config.map(({ idMateria, cantidad }) =>
+        pool.query(
+          `SELECT id FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY RANDOM() LIMIT $3`,
+          [idBloque, idMateria, cantidad]
+        )
+      )
     );
-    res.json(result.rows);
+    const ids = shuffleArray(grupos.flatMap((g) => g.rows.map((r) => r.id)));
+    res.json({ ids, total: ids.length });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al obtener materias' });
+    res.status(500).json({ error: 'Error al iniciar examen' });
   }
 });
 
-// GET /api/preguntas?idBloque=&idMateria=&cantidad=
-app.get('/api/preguntas', async (req, res) => {
-  const { idBloque, idMateria, cantidad } = req.query;
-
-  if (!idBloque || !idMateria || !cantidad) {
-    return res.status(400).json({ error: 'Faltan parámetros: idBloque, idMateria, cantidad' });
-  }
-
-  const limit = parseInt(cantidad);
-  if (isNaN(limit) || limit <= 0) {
-    return res.status(400).json({ error: 'cantidad debe ser un número positivo' });
-  }
-
+// GET /api/examen/pregunta/:id
+// Devuelve el contenido de UNA pregunta (sin respuesta correcta)
+app.get('/api/examen/pregunta/:id', async (req, res) => {
+  const { id } = req.params;
   try {
     const result = await pool.query(
-      `SELECT id, descripcion, url_imagen,
-              opcion_a, opcion_b, opcion_c, opcion_d
-       FROM preguntas
-       WHERE id_bloque = $1 AND id_materia = $2
-       ORDER BY RANDOM()
-       LIMIT $3`,
-      [idBloque, idMateria, limit]
+      `SELECT id, descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d
+       FROM preguntas WHERE id = $1`,
+      [id]
     );
-    res.json(result.rows);
+    if (!result.rows.length) return res.status(404).json({ error: 'Pregunta no encontrada' });
+    res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Error al obtener preguntas' });
+    res.status(500).json({ error: 'Error al obtener pregunta' });
   }
 });
 
 // POST /api/verificar
 app.post('/api/verificar', async (req, res) => {
   const { respuestas } = req.body;
-
   if (!respuestas || !Array.isArray(respuestas)) {
     return res.status(400).json({ error: 'Se esperaba un array de respuestas' });
   }
@@ -87,38 +93,30 @@ app.post('/api/verificar', async (req, res) => {
       [ids]
     );
 
-    const correctasMap = {};
-    for (const row of result.rows) {
-      correctasMap[row.id] = row;
-    }
+    const map = {};
+    for (const row of result.rows) map[row.id] = row;
 
     let correctas = 0;
     const detalle = respuestas.map((r) => {
-      const pregunta = correctasMap[r.id];
-      const esCorrecta = pregunta && r.respuesta === pregunta.respuesta_correcta;
+      const p = map[r.id];
+      const esCorrecta = p && r.respuesta === p.respuesta_correcta;
       if (esCorrecta) correctas++;
       return {
         id: r.id,
-        descripcion: pregunta?.descripcion,
-        url_imagen: pregunta?.url_imagen,
-        opcion_a: pregunta?.opcion_a,
-        opcion_b: pregunta?.opcion_b,
-        opcion_c: pregunta?.opcion_c,
-        opcion_d: pregunta?.opcion_d,
+        descripcion: p?.descripcion,
+        url_imagen: p?.url_imagen,
+        opcion_a: p?.opcion_a,
+        opcion_b: p?.opcion_b,
+        opcion_c: p?.opcion_c,
+        opcion_d: p?.opcion_d,
         respuesta_usuario: r.respuesta,
-        respuesta_correcta: pregunta?.respuesta_correcta,
+        respuesta_correcta: p?.respuesta_correcta,
         correcta: esCorrecta,
       };
     });
 
-    res.json({
-      total: respuestas.length,
-      correctas,
-      puntaje: Math.round((correctas / respuestas.length) * 100),
-      detalle,
-    });
+    res.json({ total: respuestas.length, correctas, detalle });
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: 'Error al verificar respuestas' });
   }
 });
