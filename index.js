@@ -39,12 +39,22 @@ app.get('/api/bloques', async (req, res) => {
 
 // GET /api/examen/iniciar?idBloque=1
 // Devuelve solo los IDs de las preguntas seleccionadas (sin contenido)
+// En modo DEBUG devuelve TODAS las preguntas del bloque en orden
 app.get('/api/examen/iniciar', async (req, res) => {
   const { idBloque } = req.query;
   const config = EXAMEN_BLOQUES[idBloque];
   if (!config) return res.status(400).json({ error: 'Bloque inválido' });
 
   try {
+    if (process.env.DEBUG === 'true') {
+      const result = await pool.query(
+        `SELECT id FROM preguntas WHERE id_bloque = $1 ORDER BY id_materia, id_pregunta_local`,
+        [idBloque]
+      );
+      const ids = result.rows.map((r) => r.id);
+      return res.json({ ids, total: ids.length, debug: true });
+    }
+
     const grupos = await Promise.all(
       config.map(({ idMateria, cantidad }) =>
         pool.query(
@@ -123,4 +133,7 @@ app.post('/api/verificar', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Backend corriendo en http://localhost:${PORT}`);
+  if (process.env.DEBUG === 'true') {
+    console.log('[DEBUG] Modo debug activo: examen carga todas las preguntas en orden');
+  }
 });
