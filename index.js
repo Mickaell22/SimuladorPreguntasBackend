@@ -31,6 +31,27 @@ function shuffleArray(arr) {
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_cambiar_en_produccion';
 
+// Middleware: verifica JWT obligatorio
+function auth(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'No autenticado' });
+  try {
+    req.usuario = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Token inválido o expirado' });
+  }
+}
+
+// Middleware: adjunta usuario si hay token, pero no falla si no hay
+function authOpcional(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (token) {
+    try { req.usuario = jwt.verify(token, JWT_SECRET); } catch {}
+  }
+  next();
+}
+
 // POST /api/registro
 app.post('/api/registro', async (req, res) => {
   const { nombre, apellido, email, cedula, telefono, direccion, tipo_institucion, contrasena } = req.body;
@@ -100,8 +121,6 @@ app.get('/api/bloques', async (req, res) => {
 });
 
 // GET /api/examen/iniciar?idBloque=1
-// Devuelve solo los IDs de las preguntas seleccionadas (sin contenido)
-// En modo DEBUG devuelve TODAS las preguntas del bloque en orden
 app.get('/api/examen/iniciar', async (req, res) => {
   const { idBloque } = req.query;
   const config = EXAMEN_BLOQUES[idBloque];
@@ -110,11 +129,13 @@ app.get('/api/examen/iniciar', async (req, res) => {
   try {
     if (process.env.DEBUG === 'true') {
       const result = await pool.query(
-        `SELECT id FROM preguntas WHERE id_bloque = $1 ORDER BY id_materia, id_pregunta_local`,
+        `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 ORDER BY id_materia, id_pregunta_local`,
         [idBloque]
       );
       const ids = result.rows.map((r) => r.id);
-      return res.json({ ids, total: ids.length, debug: true });
+      const meta = {};
+      result.rows.forEach((r) => { meta[r.id] = { idMateria: r.id_materia, local: r.id_pregunta_local }; });
+      return res.json({ ids, total: ids.length, debug: true, meta });
     }
 
     const grupos = await Promise.all(
@@ -125,7 +146,7 @@ app.get('/api/examen/iniciar', async (req, res) => {
         )
       )
     );
-    const ids = shuffleArray(grupos.flatMap((g) => g.rows.map((r) => r.id)));
+    const ids = grupos.flatMap((g) => g.rows.map((r) => r.id));
     res.json({ ids, total: ids.length });
   } catch (err) {
     res.status(500).json({ error: 'Error al iniciar examen' });
@@ -133,7 +154,6 @@ app.get('/api/examen/iniciar', async (req, res) => {
 });
 
 // GET /api/examen/pregunta/:id
-// Devuelve el contenido de UNA pregunta (sin respuesta correcta)
 app.get('/api/examen/pregunta/:id', async (req, res) => {
   const { id } = req.params;
   try {
@@ -150,8 +170,9 @@ app.get('/api/examen/pregunta/:id', async (req, res) => {
 });
 
 // POST /api/verificar
-app.post('/api/verificar', async (req, res) => {
-  const { respuestas } = req.body;
+// Si hay token válido, guarda el resultado automáticamente
+app.post('/api/verificar', authOpcional, async (req, res) => {
+  const { respuestas, idBloque } = req.body;
   if (!respuestas || !Array.isArray(respuestas)) {
     return res.status(400).json({ error: 'Se esperaba un array de respuestas' });
   }
@@ -187,9 +208,85 @@ app.post('/api/verificar', async (req, res) => {
       };
     });
 
-    res.json({ total: respuestas.length, correctas, detalle });
+    const puntaje = correctas * 25;
+
+    // Guardar en historial si el usuario está autenticado
+    if (req.usuario && idBloque) {
+      const examen = await pool.query(
+        `INSERT INTO examenes (id_usuario, id_bloque, total, correctas, puntaje)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [req.usuario.id, idBloque, respuestas.length, correctas, puntaje]
+      );
+      const idExamen = examen.rows[0].id;
+      const valores = detalle.map((d) => `(${idExamen}, ${d.id}, ${d.respuesta_usuario ? `'${d.respuesta_usuario}'` : 'NULL'}, ${d.correcta})`).join(',');
+      await pool.query(`INSERT INTO respuestas_examen (id_examen, id_pregunta, respuesta_usuario, correcta) VALUES ${valores}`);
+    }
+
+    res.json({ total: respuestas.length, correctas, puntaje, detalle });
   } catch (err) {
     res.status(500).json({ error: 'Error al verificar respuestas' });
+  }
+});
+
+// GET /api/historial — lista de exámenes del usuario (paginada)
+app.get('/api/historial', auth, async (req, res) => {
+  const POR_PAGINA = 10;
+  const pagina = Math.max(1, parseInt(req.query.pagina) || 1);
+  const offset = (pagina - 1) * POR_PAGINA;
+  try {
+    const [result, total] = await Promise.all([
+      pool.query(
+        `SELECT e.id, e.id_bloque, b.nombre AS bloque_nombre,
+                e.total, e.correctas, e.puntaje, e.fecha
+         FROM examenes e
+         JOIN bloques b ON b.id_bloque = e.id_bloque
+         WHERE e.id_usuario = $1
+         ORDER BY e.fecha DESC
+         LIMIT $2 OFFSET $3`,
+        [req.usuario.id, POR_PAGINA, offset]
+      ),
+      pool.query(`SELECT COUNT(*) FROM examenes WHERE id_usuario = $1`, [req.usuario.id]),
+    ]);
+    const totalExamenes = parseInt(total.rows[0].count);
+    res.json({
+      examenes: result.rows,
+      pagina,
+      totalPaginas: Math.ceil(totalExamenes / POR_PAGINA),
+      total: totalExamenes,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener historial' });
+  }
+});
+
+// GET /api/historial/:id — detalle de un examen con todas las respuestas
+app.get('/api/historial/:id', auth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const examen = await pool.query(
+      `SELECT e.id, e.id_bloque, b.nombre AS bloque_nombre,
+              e.total, e.correctas, e.puntaje, e.fecha
+       FROM examenes e
+       JOIN bloques b ON b.id_bloque = e.id_bloque
+       WHERE e.id = $1 AND e.id_usuario = $2`,
+      [id, req.usuario.id]
+    );
+    if (!examen.rows.length) return res.status(404).json({ error: 'Examen no encontrado' });
+
+    const respuestas = await pool.query(
+      `SELECT p.id, p.descripcion, p.url_imagen,
+              p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d,
+              p.respuesta_correcta,
+              re.respuesta_usuario, re.correcta
+       FROM respuestas_examen re
+       JOIN preguntas p ON p.id = re.id_pregunta
+       WHERE re.id_examen = $1`,
+      [id]
+    );
+
+    res.json({ ...examen.rows[0], detalle: respuestas.rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al obtener el examen' });
   }
 });
 
