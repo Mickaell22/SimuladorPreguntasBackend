@@ -120,14 +120,17 @@ app.get('/api/bloques', async (req, res) => {
   }
 });
 
-// GET /api/examen/iniciar?idBloque=1
+// GET /api/examen/iniciar?idBloque=1[&todo=true]
 app.get('/api/examen/iniciar', async (req, res) => {
-  const { idBloque } = req.query;
+  const { idBloque, todo } = req.query;
   const config = EXAMEN_BLOQUES[idBloque];
   if (!config) return res.status(400).json({ error: 'Bloque inválido' });
 
+  const isDebug = process.env.DEBUG === 'true';
+
   try {
-    if (process.env.DEBUG === 'true') {
+    // todo=true: solo en debug, carga todas las preguntas en orden
+    if (isDebug && todo === 'true') {
       const result = await pool.query(
         `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 ORDER BY id_materia, id_pregunta_local`,
         [idBloque]
@@ -138,15 +141,23 @@ app.get('/api/examen/iniciar', async (req, res) => {
       return res.json({ ids, total: ids.length, debug: true, meta });
     }
 
+    // Selección aleatoria normal (con o sin debug)
     const grupos = await Promise.all(
       config.map(({ idMateria, cantidad }) =>
         pool.query(
-          `SELECT id FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY RANDOM() LIMIT $3`,
+          `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY RANDOM() LIMIT $3`,
           [idBloque, idMateria, cantidad]
         )
       )
     );
     const ids = grupos.flatMap((g) => g.rows.map((r) => r.id));
+
+    if (isDebug) {
+      const meta = {};
+      grupos.forEach((g) => g.rows.forEach((r) => { meta[r.id] = { idMateria: r.id_materia, local: r.id_pregunta_local }; }));
+      return res.json({ ids, total: ids.length, debug: true, meta });
+    }
+
     res.json({ ids, total: ids.length });
   } catch (err) {
     res.status(500).json({ error: 'Error al iniciar examen' });
@@ -181,7 +192,8 @@ app.post('/api/verificar', authOpcional, async (req, res) => {
     const ids = respuestas.map((r) => r.id);
     const result = await pool.query(
       `SELECT id, respuesta_correcta, descripcion, url_imagen,
-              opcion_a, opcion_b, opcion_c, opcion_d
+              opcion_a, opcion_b, opcion_c, opcion_d,
+              justificacion, url_justificacion
        FROM preguntas WHERE id = ANY($1)`,
       [ids]
     );
@@ -205,6 +217,8 @@ app.post('/api/verificar', authOpcional, async (req, res) => {
         respuesta_usuario: r.respuesta,
         respuesta_correcta: p?.respuesta_correcta,
         correcta: esCorrecta,
+        justificacion: p?.justificacion,
+        url_justificacion: p?.url_justificacion,
       };
     });
 
@@ -224,6 +238,7 @@ app.post('/api/verificar', authOpcional, async (req, res) => {
 
     res.json({ total: respuestas.length, correctas, puntaje, detalle });
   } catch (err) {
+    console.error('[verificar] Error:', err.message);
     res.status(500).json({ error: 'Error al verificar respuestas' });
   }
 });
@@ -276,7 +291,7 @@ app.get('/api/historial/:id', auth, async (req, res) => {
     const respuestas = await pool.query(
       `SELECT p.id, p.descripcion, p.url_imagen,
               p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d,
-              p.respuesta_correcta,
+              p.respuesta_correcta, p.justificacion, p.url_justificacion,
               re.respuesta_usuario, re.correcta
        FROM respuestas_examen re
        JOIN preguntas p ON p.id = re.id_pregunta
