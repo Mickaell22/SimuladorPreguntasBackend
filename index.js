@@ -122,13 +122,38 @@ app.get('/api/bloques', async (req, res) => {
 
 // GET /api/examen/iniciar?idBloque=1[&todo=true]
 app.get('/api/examen/iniciar', async (req, res) => {
-  const { idBloque, todo } = req.query;
+  const { idBloque, todo, idMateria, cantidad: cantidadParam } = req.query;
   const config = EXAMEN_BLOQUES[idBloque];
   if (!config) return res.status(400).json({ error: 'Bloque inválido' });
 
   const isDebug = process.env.DEBUG === 'true';
 
   try {
+    // Modo materia única
+    if (idMateria) {
+      const materiaConfig = config.find(m => m.idMateria == idMateria);
+      if (!materiaConfig) return res.status(400).json({ error: 'Materia no válida para este bloque' });
+
+      if (isDebug) {
+        const result = await pool.query(
+          `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY id_pregunta_local`,
+          [idBloque, idMateria]
+        );
+        const ids = result.rows.map(r => r.id);
+        const meta = {};
+        result.rows.forEach(r => { meta[r.id] = { idMateria: r.id_materia, local: r.id_pregunta_local }; });
+        return res.json({ ids, total: ids.length, debug: true, meta });
+      }
+
+      const cantidad = cantidadParam ? parseInt(cantidadParam, 10) : materiaConfig.cantidad;
+      const result = await pool.query(
+        `SELECT id FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY RANDOM() LIMIT $3`,
+        [idBloque, idMateria, cantidad]
+      );
+      const ids = result.rows.map(r => r.id);
+      return res.json({ ids, total: ids.length });
+    }
+
     // todo=true: solo en debug, carga todas las preguntas en orden
     if (isDebug && todo === 'true') {
       const result = await pool.query(
