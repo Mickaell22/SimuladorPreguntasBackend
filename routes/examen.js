@@ -21,13 +21,37 @@ router.get('/bloques', async (req, res) => {
   }
 });
 
+// GET /api/examen/unidades?idBloque=N&idMateria=M
+router.get('/examen/unidades', async (req, res) => {
+  const { idBloque, idMateria } = req.query;
+  if (!idBloque || !idMateria) return res.status(400).json({ error: 'Se requiere idBloque e idMateria' });
+  try {
+    const result = await pool.query(
+      `SELECT id_unidad, nombre_unidad,
+              COUNT(p.id)::int AS total_preguntas
+       FROM unidades u
+       LEFT JOIN preguntas p USING (id_bloque, id_materia, id_unidad)
+       WHERE u.id_bloque = $1 AND u.id_materia = $2
+       GROUP BY id_unidad, nombre_unidad
+       ORDER BY id_unidad`,
+      [idBloque, idMateria]
+    );
+    res.json(result.rows);
+  } catch {
+    res.status(500).json({ error: 'Error al obtener unidades' });
+  }
+});
+
 // GET /api/examen/iniciar
 router.get('/examen/iniciar', async (req, res) => {
-  const { idBloque, todo, idMateria, cantidad: cantidadParam } = req.query;
+  const { idBloque, todo, idMateria, cantidad: cantidadParam, idUnidades: idUnidadesParam } = req.query;
   const config = EXAMEN_BLOQUES[idBloque];
   if (!config) return res.status(400).json({ error: 'Bloque inválido' });
 
   const isDebug = process.env.DEBUG === 'true';
+  const idUnidades = idUnidadesParam
+    ? idUnidadesParam.split(',').map(n => parseInt(n, 10)).filter(n => !isNaN(n))
+    : null;
 
   try {
     if (idMateria) {
@@ -35,10 +59,11 @@ router.get('/examen/iniciar', async (req, res) => {
       if (!materiaConfig) return res.status(400).json({ error: 'Materia no válida para este bloque' });
 
       if (isDebug) {
-        const result = await pool.query(
-          `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY id_pregunta_local`,
-          [idBloque, idMateria]
-        );
+        const q = idUnidades && idUnidades.length
+          ? `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 AND id_unidad = ANY($3) ORDER BY id_pregunta_local`
+          : `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY id_pregunta_local`;
+        const params = idUnidades && idUnidades.length ? [idBloque, idMateria, idUnidades] : [idBloque, idMateria];
+        const result = await pool.query(q, params);
         const ids = result.rows.map(r => r.id);
         const meta = {};
         result.rows.forEach(r => { meta[r.id] = { idMateria: r.id_materia, local: r.id_pregunta_local }; });
@@ -46,6 +71,14 @@ router.get('/examen/iniciar', async (req, res) => {
       }
 
       const cantidad = cantidadParam ? parseInt(cantidadParam, 10) : materiaConfig.cantidad;
+      if (idUnidades && idUnidades.length) {
+        const result = await pool.query(
+          `SELECT id FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 AND id_unidad = ANY($3) ORDER BY RANDOM() LIMIT $4`,
+          [idBloque, idMateria, idUnidades, cantidad]
+        );
+        return res.json({ ids: result.rows.map(r => r.id), total: result.rows.length });
+      }
+
       const result = await pool.query(
         `SELECT id FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY RANDOM() LIMIT $3`,
         [idBloque, idMateria, cantidad]
