@@ -22,6 +22,8 @@ COPY --from=deps /app/node_modules ./node_modules
 
 # Copy application source
 COPY index.js db.js ./
+COPY middleware/ ./middleware/
+COPY routes/ ./routes/
 
 # Own the workdir as the non-root user
 RUN chown -R appuser:appgroup /app
