@@ -20,10 +20,8 @@ WORKDIR /app
 # Copy installed modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
 
-# Copy application source
-COPY index.js db.js ./
-COPY middleware/ ./middleware/
-COPY routes/ ./routes/
+# Copy all application source
+COPY . .
 
 # Own the workdir as the non-root user
 RUN chown -R appuser:appgroup /app
