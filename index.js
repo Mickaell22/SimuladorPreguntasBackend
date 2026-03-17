@@ -15,6 +15,7 @@ app.use('/api', require('./routes/examen'));
 app.use('/api', require('./routes/historial'));
 app.use('/api', require('./routes/perfil'));
 app.use('/api', require('./routes/debug'));
+app.use('/api/admin', require('./routes/admin'));
 
 app.listen(PORT, () => {
   console.log(`Backend corriendo en http://localhost:${PORT}`);

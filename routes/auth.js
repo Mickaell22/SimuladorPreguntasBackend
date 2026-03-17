@@ -17,11 +17,11 @@ router.post('/registro', async (req, res) => {
     const result = await pool.query(
       `INSERT INTO usuarios (nombre, apellido, email, cedula, telefono, direccion, tipo_institucion, contrasena_hash)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, nombre, apellido, email, cedula, tipo_institucion`,
+       RETURNING id, nombre, apellido, email, cedula, tipo_institucion, rol`,
       [nombre, apellido, email, cedula, telefono, direccion, tipo_institucion, contrasena_hash]
     );
     const usuario = result.rows[0];
-    const token = jwt.sign({ id: usuario.id, email: usuario.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: usuario.id, email: usuario.email, rol: usuario.rol }, JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({ token, usuario });
   } catch (err) {
     if (err.code === '23505') {
@@ -42,7 +42,7 @@ router.post('/login', async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT id, nombre, apellido, email, cedula, tipo_institucion, contrasena_hash
+      `SELECT id, nombre, apellido, email, cedula, tipo_institucion, rol, contrasena_hash
        FROM usuarios WHERE cedula = $1`,
       [cedula]
     );
@@ -55,7 +55,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: 'Cédula o contraseña incorrectos' });
     }
     const { contrasena_hash, ...datos } = usuario;
-    const token = jwt.sign({ id: datos.id, email: datos.email }, JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign({ id: datos.id, email: datos.email, rol: datos.rol }, JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, usuario: datos });
   } catch {
     res.status(500).json({ error: 'Error al iniciar sesión' });
