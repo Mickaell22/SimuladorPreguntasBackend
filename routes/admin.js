@@ -92,20 +92,23 @@ router.delete('/materias/:id', async (req, res) => {
 // ─── UNIDADES ──────────────────────────────────────────────────────────────────
 
 router.get('/unidades', async (req, res) => {
-  const { id_materia, search, page = 1, limit = 30 } = req.query;
+  const { id_materia, id_bloque, search, page = 1, limit = 30 } = req.query;
   const offset = (page - 1) * limit;
   const conds = []; const params = [];
+  if (id_bloque)  { conds.push(`u.id_bloque = $${params.length + 1}`); params.push(id_bloque); }
   if (id_materia) { conds.push(`u.id_materia = $${params.length + 1}`); params.push(id_materia); }
   if (search)     { conds.push(`u.nombre_unidad ILIKE $${params.length + 1}`); params.push(`%${search}%`); }
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
   try {
     const countRes = await pool.query(`SELECT COUNT(*) FROM unidades u ${where}`, params);
     const { rows } = await pool.query(
-      `SELECT u.id_unidad, u.id_materia, u.nombre_unidad AS nombre, m.nombre as materia_nombre
+      `SELECT u.id_bloque, u.id_materia, u.id_unidad, u.nombre_unidad AS nombre,
+              b.nombre as bloque_nombre, m.nombre as materia_nombre
        FROM unidades u
+       LEFT JOIN bloques b ON u.id_bloque = b.id_bloque
        LEFT JOIN materias m ON u.id_materia = m.id_materia
        ${where}
-       ORDER BY u.id_materia, u.id_unidad
+       ORDER BY u.id_bloque, u.id_materia, u.id_unidad
        LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
       [...params, limit, offset]
     );
@@ -114,33 +117,41 @@ router.get('/unidades', async (req, res) => {
 });
 
 router.post('/unidades', async (req, res) => {
-  const { nombre, id_materia } = req.body;
-  if (!nombre || !id_materia) return res.status(400).json({ error: 'nombre e id_materia son requeridos' });
+  const { nombre, id_bloque, id_materia } = req.body;
+  if (!nombre || !id_bloque || !id_materia) return res.status(400).json({ error: 'nombre, id_bloque e id_materia son requeridos' });
   try {
     const { rows } = await pool.query(
-      'INSERT INTO unidades (nombre_unidad, id_materia) VALUES ($1, $2) RETURNING id_unidad, id_materia, nombre_unidad AS nombre',
-      [nombre, id_materia]
+      'INSERT INTO unidades (nombre_unidad, id_bloque, id_materia) VALUES ($1, $2, $3) RETURNING id_bloque, id_materia, id_unidad, nombre_unidad AS nombre',
+      [nombre, id_bloque, id_materia]
     );
     res.status(201).json(rows[0]);
   } catch { res.status(500).json({ error: 'Error al crear unidad' }); }
 });
 
-router.put('/unidades/:id', async (req, res) => {
-  const { nombre, id_materia } = req.body;
-  if (!nombre || !id_materia) return res.status(400).json({ error: 'nombre e id_materia son requeridos' });
+// Clave compuesta: :ib (id_bloque) :im (id_materia) :iu (id_unidad)
+router.put('/unidades/:ib/:im/:iu', async (req, res) => {
+  const { nombre } = req.body;
+  if (!nombre) return res.status(400).json({ error: 'nombre es requerido' });
+  const { ib, im, iu } = req.params;
   try {
     const { rows } = await pool.query(
-      'UPDATE unidades SET nombre_unidad = $1, id_materia = $2 WHERE id_unidad = $3 RETURNING id_unidad, id_materia, nombre_unidad AS nombre',
-      [nombre, id_materia, req.params.id]
+      `UPDATE unidades SET nombre_unidad = $1
+       WHERE id_bloque = $2 AND id_materia = $3 AND id_unidad = $4
+       RETURNING id_bloque, id_materia, id_unidad, nombre_unidad AS nombre`,
+      [nombre, ib, im, iu]
     );
     if (!rows.length) return res.status(404).json({ error: 'Unidad no encontrada' });
     res.json(rows[0]);
   } catch { res.status(500).json({ error: 'Error al actualizar unidad' }); }
 });
 
-router.delete('/unidades/:id', async (req, res) => {
+router.delete('/unidades/:ib/:im/:iu', async (req, res) => {
+  const { ib, im, iu } = req.params;
   try {
-    const { rowCount } = await pool.query('DELETE FROM unidades WHERE id_unidad = $1', [req.params.id]);
+    const { rowCount } = await pool.query(
+      'DELETE FROM unidades WHERE id_bloque = $1 AND id_materia = $2 AND id_unidad = $3',
+      [ib, im, iu]
+    );
     if (!rowCount) return res.status(404).json({ error: 'Unidad no encontrada' });
     res.json({ ok: true });
   } catch { res.status(500).json({ error: 'Error al eliminar unidad' }); }
@@ -174,33 +185,41 @@ router.get('/temas', async (req, res) => {
 });
 
 router.post('/temas', async (req, res) => {
-  const { nombre, id_unidad } = req.body;
-  if (!nombre || !id_unidad) return res.status(400).json({ error: 'nombre e id_unidad son requeridos' });
+  const { nombre, id_bloque, id_materia, id_unidad } = req.body;
+  if (!nombre || !id_bloque || !id_materia || !id_unidad) return res.status(400).json({ error: 'nombre, id_bloque, id_materia e id_unidad son requeridos' });
   try {
     const { rows } = await pool.query(
-      'INSERT INTO temas (nombre_tema, id_unidad) VALUES ($1, $2) RETURNING id_tema, id_unidad, nombre_tema AS nombre',
-      [nombre, id_unidad]
+      'INSERT INTO temas (nombre_tema, id_bloque, id_materia, id_unidad) VALUES ($1, $2, $3, $4) RETURNING id_tema, id_bloque, id_materia, id_unidad, nombre_tema AS nombre',
+      [nombre, id_bloque, id_materia, id_unidad]
     );
     res.status(201).json(rows[0]);
   } catch { res.status(500).json({ error: 'Error al crear tema' }); }
 });
 
-router.put('/temas/:id', async (req, res) => {
-  const { nombre, id_unidad } = req.body;
-  if (!nombre || !id_unidad) return res.status(400).json({ error: 'nombre e id_unidad son requeridos' });
+// Clave compuesta: :ib :im :iu :it
+router.put('/temas/:ib/:im/:iu/:it', async (req, res) => {
+  const { nombre } = req.body;
+  if (!nombre) return res.status(400).json({ error: 'nombre es requerido' });
+  const { ib, im, iu, it } = req.params;
   try {
     const { rows } = await pool.query(
-      'UPDATE temas SET nombre_tema = $1, id_unidad = $2 WHERE id_tema = $3 RETURNING id_tema, id_unidad, nombre_tema AS nombre',
-      [nombre, id_unidad, req.params.id]
+      `UPDATE temas SET nombre_tema = $1
+       WHERE id_bloque = $2 AND id_materia = $3 AND id_unidad = $4 AND id_tema = $5
+       RETURNING id_tema, id_bloque, id_materia, id_unidad, nombre_tema AS nombre`,
+      [nombre, ib, im, iu, it]
     );
     if (!rows.length) return res.status(404).json({ error: 'Tema no encontrado' });
     res.json(rows[0]);
   } catch { res.status(500).json({ error: 'Error al actualizar tema' }); }
 });
 
-router.delete('/temas/:id', async (req, res) => {
+router.delete('/temas/:ib/:im/:iu/:it', async (req, res) => {
+  const { ib, im, iu, it } = req.params;
   try {
-    const { rowCount } = await pool.query('DELETE FROM temas WHERE id_tema = $1', [req.params.id]);
+    const { rowCount } = await pool.query(
+      'DELETE FROM temas WHERE id_bloque = $1 AND id_materia = $2 AND id_unidad = $3 AND id_tema = $4',
+      [ib, im, iu, it]
+    );
     if (!rowCount) return res.status(404).json({ error: 'Tema no encontrado' });
     res.json({ ok: true });
   } catch { res.status(500).json({ error: 'Error al eliminar tema' }); }
