@@ -119,6 +119,42 @@ router.delete('/materias/:id', async (req, res) => {
   } catch { res.status(500).json({ error: 'Error al eliminar materia' }); }
 });
 
+// GET /api/admin/materias-por-bloque/:idMateria
+router.get('/materias-por-bloque/:idMateria', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id_bloque FROM materias_por_bloque WHERE id_materia = $1',
+      [req.params.idMateria]
+    );
+    res.json(rows.map(r => r.id_bloque));
+  } catch { res.status(500).json({ error: 'Error al obtener relaciones' }); }
+});
+
+// PUT /api/admin/materias-por-bloque/:idMateria
+router.put('/materias-por-bloque/:idMateria', async (req, res) => {
+  const { bloques } = req.body;
+  if (!Array.isArray(bloques)) return res.status(400).json({ error: 'bloques debe ser un array' });
+  const idMateria = req.params.idMateria;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM materias_por_bloque WHERE id_materia = $1', [idMateria]);
+    for (const idBloque of bloques) {
+      await client.query(
+        'INSERT INTO materias_por_bloque (id_bloque, id_materia) VALUES ($1, $2)',
+        [idBloque, idMateria]
+      );
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Error al actualizar relaciones' });
+  } finally {
+    client.release();
+  }
+});
+
 // ─── UNIDADES ──────────────────────────────────────────────────────────────────
 
 router.get('/unidades', async (req, res) => {
