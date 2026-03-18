@@ -160,9 +160,10 @@ router.delete('/unidades/:ib/:im/:iu', async (req, res) => {
 // ─── TEMAS ─────────────────────────────────────────────────────────────────────
 
 router.get('/temas', async (req, res) => {
-  const { id_materia, id_unidad, search, page = 1, limit = 30 } = req.query;
+  const { id_bloque, id_materia, id_unidad, search, page = 1, limit = 30 } = req.query;
   const offset = (page - 1) * limit;
   const conds = []; const params = [];
+  if (id_bloque)  { conds.push(`t.id_bloque = $${params.length + 1}`); params.push(id_bloque); }
   if (id_materia) { conds.push(`t.id_materia = $${params.length + 1}`); params.push(id_materia); }
   if (id_unidad)  { conds.push(`t.id_unidad = $${params.length + 1}`); params.push(id_unidad); }
   if (search)     { conds.push(`t.nombre_tema ILIKE $${params.length + 1}`); params.push(`%${search}%`); }
@@ -228,14 +229,15 @@ router.delete('/temas/:ib/:im/:iu/:it', async (req, res) => {
 // ─── PREGUNTAS ─────────────────────────────────────────────────────────────────
 
 router.get('/preguntas', async (req, res) => {
-  const { id_bloque, id_materia, search, page = 1, limit = 50 } = req.query;
+  const { id_bloque, id_materia, id_unidad, search, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
   const conditions = [];
   const params = [];
 
-  if (id_bloque) { conditions.push(`p.id_bloque = $${params.length + 1}`); params.push(id_bloque); }
+  if (id_bloque)  { conditions.push(`p.id_bloque = $${params.length + 1}`); params.push(id_bloque); }
   if (id_materia) { conditions.push(`p.id_materia = $${params.length + 1}`); params.push(id_materia); }
-  if (search)    { conditions.push(`p.descripcion ILIKE $${params.length + 1}`); params.push(`%${search}%`); }
+  if (id_unidad)  { conditions.push(`p.id_unidad = $${params.length + 1}`); params.push(id_unidad); }
+  if (search)     { conditions.push(`p.descripcion ILIKE $${params.length + 1}`); params.push(`%${search}%`); }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
