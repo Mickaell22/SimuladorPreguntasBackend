@@ -6,6 +6,7 @@ const path = require('path');
 require('dotenv').config({ path: __dirname + '/.env' });
 
 const app = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 
 app.use(helmet());
