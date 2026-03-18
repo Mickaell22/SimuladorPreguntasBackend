@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 require('dotenv').config({ path: __dirname + '/.env' });
 
 const app = express();
@@ -9,10 +10,7 @@ const PORT = process.env.PORT || 3001;
 
 app.use(helmet());
 
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',')
-  : ['http://localhost:5173'];
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors());
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -23,6 +21,7 @@ const loginLimiter = rateLimit({
 });
 
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 

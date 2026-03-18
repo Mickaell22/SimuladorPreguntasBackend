@@ -1,9 +1,39 @@
 const router = require('express').Router();
 const pool = require('../db');
 const { authAdmin } = require('../middleware/auth');
+const multer = require('multer');
+const path = require('path');
+const crypto = require('crypto');
+const fs = require('fs');
+
+const uploadsDir = path.join(__dirname, '..', 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: uploadsDir,
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, crypto.randomBytes(16).toString('hex') + ext);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+  },
+});
 
 // Aplicar authAdmin a todas las rutas de este router
 router.use(authAdmin);
+
+// POST /api/admin/upload
+router.post('/upload', upload.single('imagen'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibio ninguna imagen valida' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
 
 // ─── BLOQUES ───────────────────────────────────────────────────────────────────
 

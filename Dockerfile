@@ -23,8 +23,8 @@ COPY --from=deps /app/node_modules ./node_modules
 # Copy all application source
 COPY . .
 
-# Own the workdir as the non-root user
-RUN chown -R appuser:appgroup /app
+# Crear directorio de uploads y asignar permisos
+RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app
 
 USER appuser
 
