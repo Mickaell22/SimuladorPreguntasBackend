@@ -25,8 +25,7 @@ router.post('/registro', async (req, res) => {
     res.status(201).json({ token, usuario });
   } catch (err) {
     if (err.code === '23505') {
-      const campo = err.constraint?.includes('email') ? 'correo' : 'cédula';
-      return res.status(409).json({ error: `Ya existe una cuenta con ese ${campo}` });
+      return res.status(409).json({ error: 'Ya existe una cuenta con esos datos' });
     }
     res.status(500).json({ error: 'Error al crear la cuenta' });
   }

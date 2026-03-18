@@ -1,6 +1,10 @@
 const jwt = require('jsonwebtoken');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_cambiar_en_produccion';
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.error('[auth] CRITICO: JWT_SECRET no configurado. Defina la variable de entorno.');
+  process.exit(1);
+}
 
 function auth(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];

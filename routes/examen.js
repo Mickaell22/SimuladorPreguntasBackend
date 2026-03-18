@@ -185,10 +185,12 @@ router.post('/verificar', authOpcional, async (req, res) => {
         [req.usuario.id, idBloque, respuestas.length, correctas, puntaje]
       );
       const idExamen = examen.rows[0].id;
-      const valores = detalle.map(d =>
-        `(${idExamen}, ${d.id}, ${d.respuesta_usuario ? `'${d.respuesta_usuario}'` : 'NULL'}, ${d.correcta})`
-      ).join(',');
-      await pool.query(`INSERT INTO respuestas_examen (id_examen, id_pregunta, respuesta_usuario, correcta) VALUES ${valores}`);
+      await Promise.all(detalle.map(d =>
+        pool.query(
+          'INSERT INTO respuestas_examen (id_examen, id_pregunta, respuesta_usuario, correcta) VALUES ($1, $2, $3, $4)',
+          [idExamen, d.id, d.respuesta_usuario || null, d.correcta]
+        )
+      ));
     }
 
     res.json({ total: respuestas.length, correctas, puntaje, detalle });
