@@ -1,4 +1,6 @@
 node_modules/
 .env
+.env.local
+.env.ing
 database/backup_*
 database/*.dump
