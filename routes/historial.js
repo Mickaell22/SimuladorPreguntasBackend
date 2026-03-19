@@ -51,9 +51,16 @@ router.get('/historial/:id', auth, async (req, res) => {
       `SELECT p.id, p.descripcion, p.url_imagen,
               p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d,
               p.respuesta_correcta, p.justificacion, p.url_justificacion,
-              re.respuesta_usuario, re.correcta
+              re.respuesta_usuario, re.correcta,
+              m.nombre AS nombre_materia,
+              u.nombre_unidad,
+              t.nombre_tema
        FROM respuestas_examen re
        JOIN preguntas p ON p.id = re.id_pregunta
+       LEFT JOIN materias m ON m.id_materia = p.id_materia
+       LEFT JOIN simulador.preguntas sp ON sp.id = p.id
+       LEFT JOIN simulador.unidades u ON u.id_bloque = p.id_bloque AND u.id_materia = p.id_materia AND u.id_unidad = sp.id_unidad
+       LEFT JOIN simulador.temas t ON t.id_bloque = p.id_bloque AND t.id_materia = p.id_materia AND t.id_unidad = sp.id_unidad AND t.id_tema = sp.id_tema
        WHERE re.id_examen = $1`,
       [id]
     );

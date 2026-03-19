@@ -145,10 +145,18 @@ router.post('/verificar', authOpcional, async (req, res) => {
   try {
     const ids = respuestas.map(r => r.id);
     const result = await pool.query(
-      `SELECT id, respuesta_correcta, descripcion, url_imagen,
-              opcion_a, opcion_b, opcion_c, opcion_d,
-              justificacion, url_justificacion
-       FROM preguntas WHERE id = ANY($1)`,
+      `SELECT p.id, p.respuesta_correcta, p.descripcion, p.url_imagen,
+              p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d,
+              p.justificacion, p.url_justificacion,
+              m.nombre AS nombre_materia,
+              u.nombre_unidad,
+              t.nombre_tema
+       FROM preguntas p
+       LEFT JOIN materias m ON m.id_materia = p.id_materia
+       LEFT JOIN simulador.preguntas sp ON sp.id = p.id
+       LEFT JOIN simulador.unidades u ON u.id_bloque = p.id_bloque AND u.id_materia = p.id_materia AND u.id_unidad = sp.id_unidad
+       LEFT JOIN simulador.temas t ON t.id_bloque = p.id_bloque AND t.id_materia = p.id_materia AND t.id_unidad = sp.id_unidad AND t.id_tema = sp.id_tema
+       WHERE p.id = ANY($1)`,
       [ids]
     );
 
@@ -173,6 +181,9 @@ router.post('/verificar', authOpcional, async (req, res) => {
         correcta: esCorrecta,
         justificacion: p?.justificacion,
         url_justificacion: p?.url_justificacion,
+        nombre_materia: p?.nombre_materia,
+        nombre_unidad: p?.nombre_unidad,
+        nombre_tema: p?.nombre_tema,
       };
     });
 
