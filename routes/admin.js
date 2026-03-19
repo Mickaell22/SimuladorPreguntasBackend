@@ -49,7 +49,7 @@ router.post('/bloques', async (req, res) => {
   if (!nombre) return res.status(400).json({ error: 'nombre es requerido' });
   try {
     const { rows } = await pool.query(
-      'INSERT INTO bloques (nombre) VALUES ($1) RETURNING *',
+      'INSERT INTO bloques (id_bloque, nombre) VALUES ((SELECT COALESCE(MAX(id_bloque),0)+1 FROM bloques), $1) RETURNING *',
       [nombre]
     );
     res.status(201).json(rows[0]);
@@ -91,7 +91,7 @@ router.post('/materias', async (req, res) => {
   if (!nombre) return res.status(400).json({ error: 'nombre es requerido' });
   try {
     const { rows } = await pool.query(
-      'INSERT INTO materias (nombre) VALUES ($1) RETURNING *',
+      'INSERT INTO materias (id_materia, nombre) VALUES ((SELECT COALESCE(MAX(id_materia),0)+1 FROM materias), $1) RETURNING *',
       [nombre]
     );
     res.status(201).json(rows[0]);
@@ -356,7 +356,7 @@ router.post('/preguntas', async (req, res) => {
        descripcion, url_imagen || null, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta]
     );
     res.status(201).json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al crear pregunta' }); }
+  } catch (e) { console.error('Error crear pregunta:', e.message); res.status(500).json({ error: 'Error al crear pregunta' }); }
 });
 
 router.put('/preguntas/:id', async (req, res) => {
