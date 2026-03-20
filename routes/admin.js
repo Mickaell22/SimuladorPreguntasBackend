@@ -346,13 +346,21 @@ router.post('/preguntas', async (req, res) => {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
   try {
+    let localId = id_pregunta_local || null;
+    if (!localId) {
+      const { rows: maxRows } = await pool.query(
+        'SELECT COALESCE(MAX(id_pregunta_local), 0) + 1 AS next FROM preguntas WHERE id_bloque=$1 AND id_materia=$2',
+        [id_bloque, id_materia]
+      );
+      localId = maxRows[0].next;
+    }
     const { rows } = await pool.query(
       `INSERT INTO preguntas
          (id_bloque, id_materia, id_unidad, id_tema, id_pregunta_local,
           descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
-      [id_bloque, id_materia, id_unidad || null, id_tema || null, id_pregunta_local || null,
+      [id_bloque, id_materia, id_unidad || null, id_tema || null, localId,
        descripcion, url_imagen || null, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta]
     );
     res.status(201).json(rows[0]);
