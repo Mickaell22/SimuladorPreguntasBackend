@@ -13,8 +13,8 @@ const pool = process.env.DATABASE_URL
       database: process.env.DB_NAME,
     });
 
-pool.on('connect', client => {
-  client.query('SET search_path TO simulador');
+pool.on('connect', async client => {
+  await client.query('SET search_path TO simulador');
 });
 
 module.exports = pool;
