@@ -149,7 +149,9 @@ router.post('/verificar', authOpcional, async (req, res) => {
               p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d,
               p.justificacion, p.url_justificacion,
               m.nombre AS nombre_materia,
+              sp.id_unidad AS num_unidad,
               u.nombre_unidad,
+              sp.id_tema AS num_tema,
               t.nombre_tema
        FROM preguntas p
        LEFT JOIN materias m ON m.id_materia = p.id_materia
@@ -182,7 +184,9 @@ router.post('/verificar', authOpcional, async (req, res) => {
         justificacion: p?.justificacion,
         url_justificacion: p?.url_justificacion,
         nombre_materia: p?.nombre_materia,
+        num_unidad: p?.num_unidad,
         nombre_unidad: p?.nombre_unidad,
+        num_tema: p?.num_tema,
         nombre_tema: p?.nombre_tema,
       };
     });

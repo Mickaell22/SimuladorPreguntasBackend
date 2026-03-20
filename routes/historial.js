@@ -53,7 +53,9 @@ router.get('/historial/:id', auth, async (req, res) => {
               p.respuesta_correcta, p.justificacion, p.url_justificacion,
               re.respuesta_usuario, re.correcta,
               m.nombre AS nombre_materia,
+              sp.id_unidad AS num_unidad,
               u.nombre_unidad,
+              sp.id_tema AS num_tema,
               t.nombre_tema
        FROM respuestas_examen re
        JOIN preguntas p ON p.id = re.id_pregunta
