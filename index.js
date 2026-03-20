@@ -2,7 +2,6 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const path = require('path');
 require('dotenv').config({ path: __dirname + '/.env' });
 
 const app = express();
@@ -22,7 +21,6 @@ const loginLimiter = rateLimit({
 });
 
 app.use(express.json());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 

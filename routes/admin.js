@@ -1,39 +1,9 @@
 const router = require('express').Router();
 const pool = require('../db');
 const { authAdmin } = require('../middleware/auth');
-const multer = require('multer');
-const path = require('path');
-const crypto = require('crypto');
-const fs = require('fs');
-
-const uploadsDir = path.join(__dirname, '..', 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: uploadsDir,
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, crypto.randomBytes(16).toString('hex') + ext);
-  },
-});
-
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
-    cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
-  },
-});
 
 // Aplicar authAdmin a todas las rutas de este router
 router.use(authAdmin);
-
-// POST /api/admin/upload
-router.post('/upload', upload.single('imagen'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'No se recibio ninguna imagen valida' });
-  res.json({ url: `/uploads/${req.file.filename}` });
-});
 
 // ─── BLOQUES ───────────────────────────────────────────────────────────────────
 
@@ -340,7 +310,8 @@ router.get('/preguntas/:id', async (req, res) => {
 router.post('/preguntas', async (req, res) => {
   const {
     id_bloque, id_materia, id_unidad, id_tema, id_pregunta_local,
-    descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta
+    descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
+    justificacion, url_justificacion
   } = req.body;
   if (!id_bloque || !id_materia || !descripcion || !opcion_a || !opcion_b || !opcion_c || !opcion_d || !respuesta_correcta) {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
@@ -357,11 +328,13 @@ router.post('/preguntas', async (req, res) => {
     const { rows } = await pool.query(
       `INSERT INTO preguntas
          (id_bloque, id_materia, id_unidad, id_tema, id_pregunta_local,
-          descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
+          justificacion, url_justificacion)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
       [id_bloque, id_materia, id_unidad || null, id_tema || null, localId,
-       descripcion, url_imagen || null, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta]
+       descripcion, url_imagen || null, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
+       justificacion || null, url_justificacion || null]
     );
     res.status(201).json(rows[0]);
   } catch (e) { console.error('Error crear pregunta:', e.message); res.status(500).json({ error: 'Error al crear pregunta' }); }
@@ -370,7 +343,8 @@ router.post('/preguntas', async (req, res) => {
 router.put('/preguntas/:id', async (req, res) => {
   const {
     id_bloque, id_materia, id_unidad, id_tema, id_pregunta_local,
-    descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta
+    descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
+    justificacion, url_justificacion
   } = req.body;
   if (!id_bloque || !id_materia || !descripcion || !opcion_a || !opcion_b || !opcion_c || !opcion_d || !respuesta_correcta) {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
@@ -380,10 +354,11 @@ router.put('/preguntas/:id', async (req, res) => {
       `UPDATE preguntas SET
          id_bloque=$1, id_materia=$2, id_unidad=$3, id_tema=$4, id_pregunta_local=$5,
          descripcion=$6, url_imagen=$7, opcion_a=$8, opcion_b=$9, opcion_c=$10, opcion_d=$11,
-         respuesta_correcta=$12
-       WHERE id=$13 RETURNING *`,
+         respuesta_correcta=$12, justificacion=$13, url_justificacion=$14
+       WHERE id=$15 RETURNING *`,
       [id_bloque, id_materia, id_unidad || null, id_tema || null, id_pregunta_local || null,
        descripcion, url_imagen || null, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
+       justificacion || null, url_justificacion || null,
        req.params.id]
     );
     if (!rows.length) return res.status(404).json({ error: 'Pregunta no encontrada' });
