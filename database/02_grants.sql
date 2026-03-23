@@ -1,6 +1,6 @@
 -- =============================================
--- GRANTS: permisos sobre tablas ya creadas
--- Se ejecuta despues de 01_schema.sql
+-- GRANTS: permisos sobre tablas ya existentes
+-- Ejecutar despues de restaurar el dump
 -- =============================================
 
 GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA simulador TO simulador_app;
