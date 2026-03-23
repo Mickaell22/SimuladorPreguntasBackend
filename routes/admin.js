@@ -374,4 +374,58 @@ router.delete('/preguntas/:id', async (req, res) => {
   } catch { res.status(500).json({ error: 'Error al eliminar pregunta' }); }
 });
 
+// ─── IMPORTAR LOTE ─────────────────────────────────────────────────────────────
+
+router.post('/preguntas/importar-lote', async (req, res) => {
+  const { id_bloque, id_materia, id_unidad, id_tema, preguntas } = req.body;
+
+  if (!id_bloque)                              return res.status(400).json({ error: 'id_bloque es requerido' });
+  if (!id_materia)                             return res.status(400).json({ error: 'id_materia es requerido' });
+  if (!Array.isArray(preguntas) || !preguntas.length) return res.status(400).json({ error: 'preguntas es requerido' });
+
+  const client = await pool.connect();
+  const importadas = [];
+  const errores = [];
+
+  try {
+    await client.query('BEGIN');
+
+    for (let i = 0; i < preguntas.length; i++) {
+      const p = preguntas[i];
+      try {
+        if (!p.descripcion?.trim()) { errores.push({ indice: i + 1, motivo: 'descripcion vacia' }); continue; }
+        if (!p.opcion_a || !p.opcion_b)       { errores.push({ indice: i + 1, motivo: 'minimo 2 opciones requeridas' }); continue; }
+
+        const { rows: maxRows } = await client.query(
+          'SELECT COALESCE(MAX(id_pregunta_local), 0) + 1 AS next FROM preguntas WHERE id_bloque=$1 AND id_materia=$2',
+          [id_bloque, id_materia]
+        );
+
+        const { rows } = await client.query(
+          `INSERT INTO preguntas
+             (id_bloque, id_materia, id_unidad, id_tema, id_pregunta_local,
+              descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           RETURNING id`,
+          [id_bloque, id_materia, id_unidad || null, id_tema || null, maxRows[0].next,
+           p.descripcion.trim(), p.url_imagen || null,
+           p.opcion_a, p.opcion_b, p.opcion_c || null, p.opcion_d || null,
+           p.respuesta_correcta || null]
+        );
+        importadas.push(rows[0].id);
+      } catch (e) {
+        errores.push({ indice: i + 1, motivo: e.message });
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ importadas: importadas.length, errores: errores.length, detalle_errores: errores });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Error al importar: ' + e.message });
+  } finally {
+    client.release();
+  }
+});
+
 module.exports = router;
