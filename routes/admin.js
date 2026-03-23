@@ -157,8 +157,12 @@ router.post('/unidades', async (req, res) => {
   if (!nombre || !id_bloque || !id_materia) return res.status(400).json({ error: 'nombre, id_bloque e id_materia son requeridos' });
   try {
     const { rows } = await pool.query(
-      'INSERT INTO unidades (nombre_unidad, id_bloque, id_materia) VALUES ($1, $2, $3) RETURNING id_bloque, id_materia, id_unidad, nombre_unidad AS nombre',
-      [nombre, id_bloque, id_materia]
+      `INSERT INTO unidades (id_bloque, id_materia, id_unidad, nombre_unidad)
+       VALUES ($1, $2,
+         (SELECT COALESCE(MAX(id_unidad), 0) + 1 FROM unidades WHERE id_bloque = $1 AND id_materia = $2),
+         $3)
+       RETURNING id_bloque, id_materia, id_unidad, nombre_unidad AS nombre`,
+      [id_bloque, id_materia, nombre]
     );
     res.status(201).json(rows[0]);
   } catch { res.status(500).json({ error: 'Error al crear unidad' }); }
@@ -226,8 +230,12 @@ router.post('/temas', async (req, res) => {
   if (!nombre || !id_bloque || !id_materia || !id_unidad) return res.status(400).json({ error: 'nombre, id_bloque, id_materia e id_unidad son requeridos' });
   try {
     const { rows } = await pool.query(
-      'INSERT INTO temas (nombre_tema, id_bloque, id_materia, id_unidad) VALUES ($1, $2, $3, $4) RETURNING id_tema, id_bloque, id_materia, id_unidad, nombre_tema AS nombre',
-      [nombre, id_bloque, id_materia, id_unidad]
+      `INSERT INTO temas (id_bloque, id_materia, id_unidad, id_tema, nombre_tema)
+       VALUES ($1, $2, $3,
+         (SELECT COALESCE(MAX(id_tema), 0) + 1 FROM temas WHERE id_bloque = $1 AND id_materia = $2 AND id_unidad = $3),
+         $4)
+       RETURNING id_tema, id_bloque, id_materia, id_unidad, nombre_tema AS nombre`,
+      [id_bloque, id_materia, id_unidad, nombre]
     );
     res.status(201).json(rows[0]);
   } catch { res.status(500).json({ error: 'Error al crear tema' }); }
