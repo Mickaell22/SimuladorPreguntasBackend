@@ -313,12 +313,12 @@ router.post('/preguntas', async (req, res) => {
     descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
     justificacion, url_justificacion
   } = req.body;
-  if (!id_bloque || !id_materia || !descripcion || !opcion_a || !opcion_b || !opcion_c || !opcion_d || !respuesta_correcta) {
+  if (!descripcion || !opcion_a || !opcion_b || !opcion_c || !opcion_d || !respuesta_correcta) {
     return res.status(400).json({ error: 'Faltan campos obligatorios' });
   }
   try {
     let localId = id_pregunta_local || null;
-    if (!localId) {
+    if (!localId && id_bloque && id_materia) {
       const { rows: maxRows } = await pool.query(
         'SELECT COALESCE(MAX(id_pregunta_local), 0) + 1 AS next FROM preguntas WHERE id_bloque=$1 AND id_materia=$2',
         [id_bloque, id_materia]
@@ -332,7 +332,7 @@ router.post('/preguntas', async (req, res) => {
           justificacion, url_justificacion)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        RETURNING *`,
-      [id_bloque, id_materia, id_unidad || null, id_tema || null, localId,
+      [id_bloque || null, id_materia || null, id_unidad || null, id_tema || null, localId,
        descripcion, url_imagen || null, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
        justificacion || null, url_justificacion || null]
     );
