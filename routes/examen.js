@@ -21,6 +21,56 @@ router.get('/bloques', async (req, res) => {
   }
 });
 
+// GET /api/bloques-info  — bloques con materias y conteo real de preguntas
+router.get('/bloques-info', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT b.id_bloque, b.nombre,
+              m.id_materia, m.nombre AS nombre_materia,
+              COUNT(p.id)::int AS total_preguntas
+       FROM bloques b
+       LEFT JOIN materias_por_bloque mpb ON b.id_bloque = mpb.id_bloque
+       LEFT JOIN materias m ON mpb.id_materia = m.id_materia
+       LEFT JOIN preguntas p ON p.id_bloque = b.id_bloque AND p.id_materia = m.id_materia
+       GROUP BY b.id_bloque, b.nombre, m.id_materia, m.nombre
+       ORDER BY b.id_bloque, m.id_materia`
+    );
+
+    // Agrupar por bloque y mezclar con config del examen
+    const bloquesMap = {};
+    for (const row of rows) {
+      if (!bloquesMap[row.id_bloque]) {
+        bloquesMap[row.id_bloque] = { id: row.id_bloque, nombre: row.nombre, materias: [] };
+      }
+      if (row.id_materia !== null) {
+        const examConfig = (EXAMEN_BLOQUES[row.id_bloque] || []).find(c => c.idMateria === row.id_materia);
+        bloquesMap[row.id_bloque].materias.push({
+          id: row.id_materia,
+          nombre: row.nombre_materia,
+          cantidad: examConfig ? examConfig.cantidad : 0,
+          total_preguntas: row.total_preguntas,
+        });
+      }
+    }
+
+    const bloques = Object.values(bloquesMap).map(b => {
+      const totalExamen = b.materias.reduce((s, m) => s + m.cantidad, 0);
+      return {
+        ...b,
+        materias: b.materias.map(m => ({
+          ...m,
+          porcentaje: totalExamen > 0 ? Math.round((m.cantidad / totalExamen) * 100) : 0,
+        })),
+      };
+    });
+
+    res.json(bloques);
+  } catch (err) {
+    console.error('[bloques-info]', err.message);
+    res.status(500).json({ error: 'Error al obtener bloques' });
+  }
+});
+
 // GET /api/examen/unidades?idBloque=N&idMateria=M
 router.get('/examen/unidades', async (req, res) => {
   const { idBloque, idMateria } = req.query;
