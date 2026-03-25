@@ -2,7 +2,6 @@
 -- PostgreSQL database dump
 --
 
-\restrict lOeRvJtBlw6UiCJuApDoyUeatABhy2LVBaZsqSVnmpzZX0P9fMvrTFkodwTE9PO
 
 -- Dumped from database version 18.1 (Debian 18.1-2)
 -- Dumped by pg_dump version 18.1 (Debian 18.1-2)
@@ -73,6 +72,17 @@ CREATE SEQUENCE simulador.examenes_id_seq
 --
 
 ALTER SEQUENCE simulador.examenes_id_seq OWNED BY simulador.examenes.id;
+
+
+--
+-- Name: informacion_bloque; Type: TABLE; Schema: simulador; Owner: -
+--
+
+CREATE TABLE simulador.informacion_bloque (
+    id_bloque integer NOT NULL,
+    carreras jsonb DEFAULT '[]'::jsonb NOT NULL,
+    config_materias jsonb DEFAULT '[]'::jsonb NOT NULL
+);
 
 
 --
@@ -253,6 +263,14 @@ ALTER TABLE ONLY simulador.examenes
 
 
 --
+-- Name: informacion_bloque informacion_bloque_pkey; Type: CONSTRAINT; Schema: simulador; Owner: -
+--
+
+ALTER TABLE ONLY simulador.informacion_bloque
+    ADD CONSTRAINT informacion_bloque_pkey PRIMARY KEY (id_bloque);
+
+
+--
 -- Name: materias materias_pkey; Type: CONSTRAINT; Schema: simulador; Owner: -
 --
 
@@ -349,6 +367,14 @@ ALTER TABLE ONLY simulador.examenes
 
 
 --
+-- Name: informacion_bloque informacion_bloque_id_bloque_fkey; Type: FK CONSTRAINT; Schema: simulador; Owner: -
+--
+
+ALTER TABLE ONLY simulador.informacion_bloque
+    ADD CONSTRAINT informacion_bloque_id_bloque_fkey FOREIGN KEY (id_bloque) REFERENCES simulador.bloques(id_bloque);
+
+
+--
 -- Name: materias_por_bloque materias_por_bloque_id_bloque_fkey; Type: FK CONSTRAINT; Schema: simulador; Owner: -
 --
 
@@ -420,16 +446,20 @@ ALTER TABLE ONLY simulador.unidades
     ADD CONSTRAINT unidades_id_materia_fkey FOREIGN KEY (id_materia) REFERENCES simulador.materias(id_materia);
 
 
+
+
+
+
 --
 -- Permisos para usuario de aplicacion
 --
 
-DO $$
+DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'simulador_app') THEN
     CREATE ROLE simulador_app LOGIN PASSWORD 'Sim2024AppSecure9x';
   END IF;
-END $$;
+END \$\$;
 
 GRANT USAGE ON SCHEMA simulador TO simulador_app;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA simulador TO simulador_app;
@@ -440,4 +470,3 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA simulador GRANT USAGE, SELECT ON SEQUENCES TO
 --
 -- PostgreSQL database dump complete
 --
-
