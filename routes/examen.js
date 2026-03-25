@@ -2,14 +2,15 @@ const router = require('express').Router();
 const pool = require('../db');
 const { authOpcional } = require('../middleware/auth');
 
-const EXAMEN_BLOQUES = {
-  1: [{ idMateria: 2, cantidad: 16 }, { idMateria: 1, cantidad: 8 },  { idMateria: 3, cantidad: 16 }],
-  2: [{ idMateria: 2, cantidad: 12 }, { idMateria: 1, cantidad: 8 },  { idMateria: 4, cantidad: 20 }],
-  3: [{ idMateria: 2, cantidad: 8 },  { idMateria: 1, cantidad: 16 }, { idMateria: 5, cantidad: 16 }],
-  4: [{ idMateria: 7, cantidad: 8 },  { idMateria: 1, cantidad: 16 }, { idMateria: 6, cantidad: 16 }],
-  5: [{ idMateria: 2, cantidad: 20 }, { idMateria: 1, cantidad: 8 },  { idMateria: 8, cantidad: 12 }],
-  6: [{ idMateria: 2, cantidad: 8 },  { idMateria: 4, cantidad: 16 }, { idMateria: 9, cantidad: 16 }],
-};
+// Carga la config de un bloque desde informacion_bloque.
+// Retorna array [{id_materia, nombre, cantidad, porcentaje}] o null si no existe.
+async function getConfigBloque(idBloque) {
+  const { rows } = await pool.query(
+    'SELECT config_materias FROM informacion_bloque WHERE id_bloque = $1',
+    [idBloque]
+  );
+  return rows.length ? rows[0].config_materias : null;
+}
 
 // GET /api/bloques
 router.get('/bloques', async (req, res) => {
@@ -21,48 +22,42 @@ router.get('/bloques', async (req, res) => {
   }
 });
 
-// GET /api/bloques-info  — bloques con materias y conteo real de preguntas
+// GET /api/bloques-info  — bloques con materias, conteo real de preguntas y carreras (desde informacion_bloque)
 router.get('/bloques-info', async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      `SELECT b.id_bloque, b.nombre,
-              m.id_materia, m.nombre AS nombre_materia,
-              COUNT(p.id)::int AS total_preguntas
-       FROM bloques b
-       LEFT JOIN materias_por_bloque mpb ON b.id_bloque = mpb.id_bloque
-       LEFT JOIN materias m ON mpb.id_materia = m.id_materia
-       LEFT JOIN preguntas p ON p.id_bloque = b.id_bloque AND p.id_materia = m.id_materia
-       GROUP BY b.id_bloque, b.nombre, m.id_materia, m.nombre
-       ORDER BY b.id_bloque, m.id_materia`
-    );
+    const [{ rows: infoRows }, { rows: countRows }] = await Promise.all([
+      pool.query(
+        `SELECT b.id_bloque, b.nombre, ib.carreras, ib.config_materias
+         FROM informacion_bloque ib
+         JOIN bloques b USING (id_bloque)
+         ORDER BY b.id_bloque`
+      ),
+      pool.query(
+        `SELECT id_bloque, id_materia, COUNT(id)::int AS total_preguntas
+         FROM preguntas
+         GROUP BY id_bloque, id_materia`
+      ),
+    ]);
 
-    // Agrupar por bloque y mezclar con config del examen
-    const bloquesMap = {};
-    for (const row of rows) {
-      if (!bloquesMap[row.id_bloque]) {
-        bloquesMap[row.id_bloque] = { id: row.id_bloque, nombre: row.nombre, materias: [] };
-      }
-      if (row.id_materia !== null) {
-        const examConfig = (EXAMEN_BLOQUES[row.id_bloque] || []).find(c => c.idMateria === row.id_materia);
-        bloquesMap[row.id_bloque].materias.push({
-          id: row.id_materia,
-          nombre: row.nombre_materia,
-          cantidad: examConfig ? examConfig.cantidad : 0,
-          total_preguntas: row.total_preguntas,
-        });
-      }
+    // Mapa de conteos reales: { idBloque: { idMateria: total } }
+    const countMap = {};
+    for (const r of countRows) {
+      if (!countMap[r.id_bloque]) countMap[r.id_bloque] = {};
+      countMap[r.id_bloque][r.id_materia] = r.total_preguntas;
     }
 
-    const bloques = Object.values(bloquesMap).map(b => {
-      const totalExamen = b.materias.reduce((s, m) => s + m.cantidad, 0);
-      return {
-        ...b,
-        materias: b.materias.map(m => ({
-          ...m,
-          porcentaje: totalExamen > 0 ? Math.round((m.cantidad / totalExamen) * 100) : 0,
-        })),
-      };
-    });
+    const bloques = infoRows.map(row => ({
+      id: row.id_bloque,
+      nombre: row.nombre,
+      carreras: row.carreras,
+      materias: row.config_materias.map(m => ({
+        id: m.id_materia,
+        nombre: m.nombre,
+        cantidad: m.cantidad,
+        porcentaje: m.porcentaje,
+        total_preguntas: (countMap[row.id_bloque] || {})[m.id_materia] || 0,
+      })),
+    }));
 
     res.json(bloques);
   } catch (err) {
@@ -95,8 +90,6 @@ router.get('/examen/unidades', async (req, res) => {
 // GET /api/examen/iniciar
 router.get('/examen/iniciar', async (req, res) => {
   const { idBloque, todo, idMateria, cantidad: cantidadParam, idUnidades: idUnidadesParam } = req.query;
-  const config = EXAMEN_BLOQUES[idBloque];
-  if (!config) return res.status(400).json({ error: 'Bloque inválido' });
 
   const isDebug = process.env.DEBUG === 'true';
   const idUnidades = idUnidadesParam
@@ -104,8 +97,11 @@ router.get('/examen/iniciar', async (req, res) => {
     : null;
 
   try {
+    const config = await getConfigBloque(idBloque);
+    if (!config) return res.status(400).json({ error: 'Bloque inválido' });
+
     if (idMateria) {
-      const materiaConfig = config.find(m => m.idMateria == idMateria);
+      const materiaConfig = config.find(m => m.id_materia == idMateria);
       if (!materiaConfig) return res.status(400).json({ error: 'Materia no válida para este bloque' });
 
       if (isDebug) {
@@ -148,10 +144,10 @@ router.get('/examen/iniciar', async (req, res) => {
     }
 
     const grupos = await Promise.all(
-      config.map(({ idMateria, cantidad }) =>
+      config.map(({ id_materia, cantidad }) =>
         pool.query(
           `SELECT id, id_materia, id_pregunta_local FROM preguntas WHERE id_bloque = $1 AND id_materia = $2 ORDER BY RANDOM() LIMIT $3`,
-          [idBloque, idMateria, cantidad]
+          [idBloque, id_materia, cantidad]
         )
       )
     );
@@ -164,7 +160,8 @@ router.get('/examen/iniciar', async (req, res) => {
     }
 
     res.json({ ids, total: ids.length });
-  } catch {
+  } catch (err) {
+    console.error('[examen/iniciar]', err.message);
     res.status(500).json({ error: 'Error al iniciar examen' });
   }
 });

@@ -17,13 +17,25 @@ router.get('/bloques', async (req, res) => {
 router.post('/bloques', async (req, res) => {
   const { nombre } = req.body;
   if (!nombre) return res.status(400).json({ error: 'nombre es requerido' });
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+    const { rows } = await client.query(
       'INSERT INTO bloques (id_bloque, nombre) VALUES ((SELECT COALESCE(MAX(id_bloque),0)+1 FROM bloques), $1) RETURNING *',
       [nombre]
     );
+    await client.query(
+      'INSERT INTO informacion_bloque (id_bloque, carreras, config_materias) VALUES ($1, $2, $3)',
+      [rows[0].id_bloque, '[]', '[]']
+    );
+    await client.query('COMMIT');
     res.status(201).json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al crear bloque' }); }
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: 'Error al crear bloque' });
+  } finally {
+    client.release();
+  }
 });
 
 router.put('/bloques/:id', async (req, res) => {
@@ -40,11 +52,75 @@ router.put('/bloques/:id', async (req, res) => {
 });
 
 router.delete('/bloques/:id', async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { rowCount } = await pool.query('DELETE FROM bloques WHERE id_bloque = $1', [req.params.id]);
-    if (!rowCount) return res.status(404).json({ error: 'Bloque no encontrado' });
+    await client.query('BEGIN');
+
+    // Verificar que el bloque existe
+    const { rowCount: existe } = await client.query('SELECT 1 FROM bloques WHERE id_bloque = $1', [req.params.id]);
+    if (!existe) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Bloque no encontrado' });
+    }
+
+    // Bloquear si tiene preguntas o exámenes (datos reales)
+    const { rows: [counts] } = await client.query(
+      `SELECT
+        (SELECT COUNT(*) FROM preguntas WHERE id_bloque = $1)::int AS preguntas,
+        (SELECT COUNT(*) FROM examenes WHERE id_bloque = $1)::int AS examenes`,
+      [req.params.id]
+    );
+    if (counts.preguntas > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `No se puede eliminar: el bloque tiene ${counts.preguntas} pregunta(s) asociada(s)` });
+    }
+    if (counts.examenes > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: `No se puede eliminar: el bloque tiene ${counts.examenes} examen(es) registrado(s)` });
+    }
+
+    // Eliminar dependencias en orden
+    await client.query('DELETE FROM informacion_bloque   WHERE id_bloque = $1', [req.params.id]);
+    await client.query('DELETE FROM materias_por_bloque  WHERE id_bloque = $1', [req.params.id]);
+    await client.query('DELETE FROM unidades             WHERE id_bloque = $1', [req.params.id]);
+    await client.query('DELETE FROM bloques              WHERE id_bloque = $1', [req.params.id]);
+
+    await client.query('COMMIT');
     res.json({ ok: true });
-  } catch { res.status(500).json({ error: 'Error al eliminar bloque' }); }
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[delete bloque]', err.message);
+    res.status(500).json({ error: 'Error al eliminar bloque' });
+  } finally {
+    client.release();
+  }
+});
+
+// ─── INFO BLOQUE (carreras + config_materias) ──────────────────────────────────
+
+router.get('/info-bloque/:id', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT id_bloque, carreras, config_materias FROM informacion_bloque WHERE id_bloque = $1',
+      [req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Info no encontrada' });
+    res.json(rows[0]);
+  } catch { res.status(500).json({ error: 'Error al obtener info del bloque' }); }
+});
+
+router.put('/info-bloque/:id', async (req, res) => {
+  const { carreras, config_materias } = req.body;
+  if (!Array.isArray(carreras) || !Array.isArray(config_materias))
+    return res.status(400).json({ error: 'carreras y config_materias deben ser arrays' });
+  try {
+    const { rows } = await pool.query(
+      `UPDATE informacion_bloque SET carreras = $1, config_materias = $2 WHERE id_bloque = $3 RETURNING *`,
+      [JSON.stringify(carreras), JSON.stringify(config_materias), req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Info no encontrada' });
+    res.json(rows[0]);
+  } catch { res.status(500).json({ error: 'Error al actualizar info del bloque' }); }
 });
 
 // ─── MATERIAS ──────────────────────────────────────────────────────────────────
