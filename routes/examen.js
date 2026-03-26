@@ -2,14 +2,27 @@ const router = require('express').Router();
 const pool = require('../db');
 const { authOpcional } = require('../middleware/auth');
 
-const EXAMEN_BLOQUES = {
-  1: [{ idMateria: 2, cantidad: 16 }, { idMateria: 1, cantidad: 8 },  { idMateria: 3, cantidad: 16 }],
-  2: [{ idMateria: 2, cantidad: 12 }, { idMateria: 1, cantidad: 8 },  { idMateria: 4, cantidad: 20 }],
-  3: [{ idMateria: 2, cantidad: 8 },  { idMateria: 1, cantidad: 16 }, { idMateria: 5, cantidad: 16 }],
-  4: [{ idMateria: 7, cantidad: 8 },  { idMateria: 1, cantidad: 16 }, { idMateria: 6, cantidad: 16 }],
-  5: [{ idMateria: 2, cantidad: 20 }, { idMateria: 1, cantidad: 8 },  { idMateria: 8, cantidad: 12 }],
-  6: [{ idMateria: 2, cantidad: 8 },  { idMateria: 4, cantidad: 16 }, { idMateria: 9, cantidad: 16 }],
-};
+// Config del examen cargada desde la DB (lazy, se cachea en memoria).
+// Fuente: informacion_bloque.config_materias + materias (para resolver nombre → id_materia).
+let _examenBloques = null;
+
+async function getExamenBloques() {
+  if (_examenBloques) return _examenBloques;
+  const [{ rows: infoRows }, { rows: materiasRows }] = await Promise.all([
+    pool.query('SELECT id_bloque, config_materias FROM informacion_bloque ORDER BY id_bloque'),
+    pool.query('SELECT id_materia, nombre FROM simulador.materias'),
+  ]);
+  const materiasMap = Object.fromEntries(
+    materiasRows.map(m => [m.nombre.toLowerCase(), m.id_materia])
+  );
+  _examenBloques = {};
+  for (const row of infoRows) {
+    _examenBloques[row.id_bloque] = row.config_materias
+      .map(m => ({ idMateria: materiasMap[m.nombre.toLowerCase()], cantidad: m.cantidad }))
+      .filter(m => m.idMateria != null);
+  }
+  return _examenBloques;
+}
 
 // GET /api/bloques
 router.get('/bloques', async (req, res) => {
@@ -17,6 +30,43 @@ router.get('/bloques', async (req, res) => {
     const result = await pool.query('SELECT * FROM bloques ORDER BY id_bloque');
     res.json(result.rows);
   } catch {
+    res.status(500).json({ error: 'Error al obtener bloques' });
+  }
+});
+
+// GET /api/bloques-info  — bloques con materias, conteo real de preguntas y carreras (desde informacion_bloque)
+router.get('/bloques-info', async (req, res) => {
+  try {
+    const [{ rows: infoRows }, { rows: materiasRows }] = await Promise.all([
+      pool.query(
+        `SELECT b.id_bloque, b.nombre, ib.carreras, ib.config_materias
+         FROM informacion_bloque ib
+         JOIN bloques b USING (id_bloque)
+         ORDER BY b.id_bloque`
+      ),
+      pool.query('SELECT id_materia, nombre FROM simulador.materias'),
+    ]);
+
+    // mapa nombre (lowercase) → id_materia para detectar materias reales
+    const materiasMap = Object.fromEntries(
+      materiasRows.map(m => [m.nombre.toLowerCase(), m.id_materia])
+    );
+
+    const bloques = infoRows.map(row => ({
+      id: row.id_bloque,
+      nombre: row.nombre,
+      carreras: row.carreras,
+      materias: row.config_materias.map(m => ({
+        id: materiasMap[m.nombre.toLowerCase()] ?? null,
+        nombre: m.nombre,
+        cantidad: m.cantidad,
+        porcentaje: m.porcentaje,
+      })),
+    }));
+
+    res.json(bloques);
+  } catch (err) {
+    console.error('[bloques-info]', err.message);
     res.status(500).json({ error: 'Error al obtener bloques' });
   }
 });
@@ -45,8 +95,6 @@ router.get('/examen/unidades', async (req, res) => {
 // GET /api/examen/iniciar
 router.get('/examen/iniciar', async (req, res) => {
   const { idBloque, todo, idMateria, cantidad: cantidadParam, idUnidades: idUnidadesParam } = req.query;
-  const config = EXAMEN_BLOQUES[idBloque];
-  if (!config) return res.status(400).json({ error: 'Bloque inválido' });
 
   const isDebug = process.env.DEBUG === 'true';
   const idUnidades = idUnidadesParam
@@ -54,6 +102,10 @@ router.get('/examen/iniciar', async (req, res) => {
     : null;
 
   try {
+    const examenBloques = await getExamenBloques();
+    const config = examenBloques[idBloque];
+    if (!config) return res.status(400).json({ error: 'Bloque inválido' });
+
     if (idMateria) {
       const materiaConfig = config.find(m => m.idMateria == idMateria);
       if (!materiaConfig) return res.status(400).json({ error: 'Materia no válida para este bloque' });
@@ -114,7 +166,8 @@ router.get('/examen/iniciar', async (req, res) => {
     }
 
     res.json({ ids, total: ids.length });
-  } catch {
+  } catch (err) {
+    console.error('[examen/iniciar]', err.message);
     res.status(500).json({ error: 'Error al iniciar examen' });
   }
 });
@@ -215,4 +268,7 @@ router.post('/verificar', authOpcional, async (req, res) => {
   }
 });
 
+function invalidarCacheExamen() { _examenBloques = null; }
+
 module.exports = router;
+module.exports.invalidarCacheExamen = invalidarCacheExamen;

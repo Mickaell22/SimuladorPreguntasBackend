@@ -1,22 +1,26 @@
 #!/bin/bash
-# Restaura un backup en una maquina nueva o existente.
-# Uso: ./restaurar.sh <archivo.dump|archivo.sql>
+# Restaura la DB desde un archivo SQL.
+# Los archivos ya incluyen schema, datos, permisos y usuario simulador_app.
+#
+# Uso:
+#   ./restaurar.sh backup_20260320_115755.sql   <- con datos
+#   ./restaurar.sh schema_only.sql              <- solo estructura
 #
 # Si la base de datos no existe todavia, crearla primero:
-#   PGPASSWORD=<pass> createdb -U postgres -h localhost simulador_preguntas
+#   PGPASSWORD=<pass> createdb -U postgres -h 127.0.0.1 simulador_preguntas
 
 set -e
 
 DUMP=${1:-""}
 DB="simulador_preguntas"
 USER="postgres"
-HOST="localhost"
+HOST="127.0.0.1"
 PORT="5432"
 DIR="$(dirname "$0")"
 
 if [ -z "$DUMP" ]; then
-  echo "ERROR: especifica el archivo dump"
-  echo "Uso: $0 <archivo.dump|archivo.sql>"
+  echo "ERROR: especifica el archivo SQL"
+  echo "Uso: $0 <archivo.sql>"
   exit 1
 fi
 
@@ -29,18 +33,11 @@ read -s -p "Password de postgres: " PGPASSWORD
 export PGPASSWORD
 echo ""
 
-echo "1/3 Aplicando init (schema + usuario simulador_app + permisos default)..."
-psql -U "$USER" -h "$HOST" -p "$PORT" -d "$DB" -f "$DIR/00_init.sql"
+echo "Eliminando schema anterior si existe..."
+psql -U "$USER" -h "$HOST" -p "$PORT" -d "$DB" -c "DROP SCHEMA IF EXISTS simulador CASCADE;" 2>/dev/null || true
 
-echo "2/3 Restaurando dump..."
-if [[ "$DUMP" == *.dump ]]; then
-  pg_restore -U "$USER" -h "$HOST" -p "$PORT" -d "$DB" --no-owner -F c "$DUMP"
-else
-  psql -U "$USER" -h "$HOST" -p "$PORT" -d "$DB" -f "$DUMP"
-fi
-
-echo "3/3 Aplicando grants sobre tablas restauradas..."
-psql -U "$USER" -h "$HOST" -p "$PORT" -d "$DB" -f "$DIR/02_grants.sql"
+echo "Restaurando $DUMP ..."
+psql -U "$USER" -h "$HOST" -p "$PORT" -d "$DB" -f "$DUMP"
 
 echo ""
 echo "OK — restauracion completada"
