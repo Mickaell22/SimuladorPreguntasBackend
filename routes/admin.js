@@ -426,6 +426,63 @@ router.get('/preguntas', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Error al obtener preguntas' }); }
 });
 
+router.get('/preguntas/exportar-xml', async (req, res) => {
+  const { id_bloque, id_materia, id_unidad, id_tema } = req.query;
+  const conditions = [];
+  const params = [];
+  if (id_bloque)  { conditions.push(`p.id_bloque  = $${params.length + 1}`); params.push(id_bloque); }
+  if (id_materia) { conditions.push(`p.id_materia = $${params.length + 1}`); params.push(id_materia); }
+  if (id_unidad)  { conditions.push(`p.id_unidad  = $${params.length + 1}`); params.push(id_unidad); }
+  if (id_tema)    { conditions.push(`p.id_tema    = $${params.length + 1}`); params.push(id_tema); }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  try {
+    const { rows } = await pool.query(
+      `SELECT p.id_pregunta_local, p.descripcion, p.url_imagen,
+              p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d, p.respuesta_correcta
+       FROM preguntas p
+       ${where}
+       ORDER BY p.id_bloque, p.id_materia, p.id_pregunta_local`,
+      params
+    );
+    const esc = s => (s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+    const questions = rows.map(p => {
+      const enunciado = p.url_imagen
+        ? `${esc(p.descripcion)}<img src="${esc(p.url_imagen)}" />`
+        : esc(p.descripcion);
+      const answers = ['a', 'b', 'c', 'd'].map(l => {
+        const texto = p[`opcion_${l}`] || '';
+        const fraction = p.respuesta_correcta === l ? '100' : '0';
+        const content = texto.startsWith('data:image')
+          ? `<img src="${esc(texto)}" />`
+          : esc(texto);
+        return `    <answer fraction="${fraction}" format="html"><text>${content}</text></answer>`;
+      });
+      return `  <question type="multichoice">
+    <name><text>${esc((p.descripcion || '').slice(0, 80))}</text></name>
+    <questiontext format="html"><text>${enunciado}</text></questiontext>
+    <defaultgrade>1.0000000</defaultgrade>
+    <generalfeedback format="html"><text></text></generalfeedback>
+    <single>true</single>
+    <shuffleanswers>1</shuffleanswers>
+    <answernumbering>abc</answernumbering>
+${answers.join('\n')}
+  </question>`;
+    });
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<quiz>\n${questions.join('\n')}\n</quiz>`;
+    const filename = `preguntas_bloque${id_bloque || 'todos'}_materia${id_materia || 'todas'}.xml`;
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(xml);
+  } catch (err) {
+    console.error('[exportar-xml]', err.message);
+    res.status(500).json({ error: 'Error al exportar preguntas' });
+  }
+});
+
 router.get('/preguntas/:id', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM preguntas WHERE id = $1', [req.params.id]);
