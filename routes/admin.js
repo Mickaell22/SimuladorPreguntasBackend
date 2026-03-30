@@ -451,13 +451,13 @@ router.get('/preguntas/exportar-xml', async (req, res) => {
       .replace(/"/g, '&quot;');
     const questions = rows.map(p => {
       const enunciado = p.url_imagen
-        ? `${esc(p.descripcion)}<img src="${esc(p.url_imagen)}" />`
+        ? `${esc(p.descripcion)}&lt;img src="${p.url_imagen}" /&gt;`
         : esc(p.descripcion);
       const answers = ['a', 'b', 'c', 'd'].map(l => {
         const texto = p[`opcion_${l}`] || '';
         const fraction = p.respuesta_correcta === l ? '100' : '0';
         const content = texto.startsWith('data:image')
-          ? `<img src="${esc(texto)}" />`
+          ? `&lt;img src="${texto}" /&gt;`
           : esc(texto);
         return `    <answer fraction="${fraction}" format="html"><text>${content}</text></answer>`;
       });
