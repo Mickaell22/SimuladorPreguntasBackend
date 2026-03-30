@@ -397,7 +397,7 @@ router.delete('/temas/:ib/:im/:iu/:it', async (req, res) => {
 // ─── PREGUNTAS ─────────────────────────────────────────────────────────────────
 
 router.get('/preguntas', async (req, res) => {
-  const { id_bloque, id_materia, id_unidad, search, page = 1, limit = 50 } = req.query;
+  const { id_bloque, id_materia, id_unidad, search, con_imagen, respuesta_correcta, page = 1, limit = 50 } = req.query;
   const offset = (page - 1) * limit;
   const conditions = [];
   const params = [];
@@ -406,6 +406,9 @@ router.get('/preguntas', async (req, res) => {
   if (id_materia) { conditions.push(`p.id_materia = $${params.length + 1}`); params.push(id_materia); }
   if (id_unidad)  { conditions.push(`p.id_unidad = $${params.length + 1}`); params.push(id_unidad); }
   if (search)     { conditions.push(`p.descripcion ILIKE $${params.length + 1}`); params.push(`%${search}%`); }
+  if (con_imagen === 'si')  { conditions.push(`p.url_imagen IS NOT NULL AND p.url_imagen <> ''`); }
+  if (con_imagen === 'no')  { conditions.push(`(p.url_imagen IS NULL OR p.url_imagen = '')`); }
+  if (respuesta_correcta)   { conditions.push(`p.respuesta_correcta = $${params.length + 1}`); params.push(respuesta_correcta); }
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
