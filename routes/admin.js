@@ -2,6 +2,11 @@ const router = require('express').Router();
 const pool = require('../db');
 const { authAdmin } = require('../middleware/auth');
 const { invalidarCacheExamen } = require('./examen');
+const multer = require('multer');
+const XLSX = require('xlsx');
+const AdmZip = require('adm-zip');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
 
 // Aplicar authAdmin a todas las rutas de este router
 router.use(authAdmin);
@@ -611,5 +616,169 @@ router.post('/preguntas/importar-lote', async (req, res) => {
     client.release();
   }
 });
+
+// ─── IMPORTAR EXCEL ────────────────────────────────────────────────────────────
+
+router.get('/excel/plantilla', (req, res) => {
+  const wb = XLSX.utils.book_new();
+
+  const headers = [
+    'descripcion', 'url_imagen',
+    'opcion_a', 'opcion_b', 'opcion_c', 'opcion_d',
+    'respuesta_correcta', 'justificacion',
+  ];
+
+  const ejemplos = [
+    ['Ejemplo de pregunta sin imagen', '', 'Opcion correcta', 'Opcion incorrecta 1', 'Opcion incorrecta 2', 'Opcion incorrecta 3', 'A', 'Explicacion opcional'],
+    ['Pregunta cuyo enunciado tiene imagen', 'imagen1.jpg', 'Respuesta A', 'Respuesta B', 'Respuesta C', 'Respuesta D', 'B', ''],
+    ['Pregunta con imagen en opciones', '', 'opcion_a.jpg', 'opcion_b.jpg', 'opcion_c.jpg', 'opcion_d.jpg', 'C', ''],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...ejemplos]);
+  ws['!cols'] = [
+    { wch: 55 }, { wch: 22 },
+    { wch: 32 }, { wch: 32 }, { wch: 32 }, { wch: 32 },
+    { wch: 18 }, { wch: 45 },
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, 'Preguntas');
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="plantilla_preguntas.xlsx"');
+  res.send(buf);
+});
+
+router.post('/excel/importar',
+  upload.fields([
+    { name: 'archivo_excel', maxCount: 1 },
+    { name: 'archivo_zip',   maxCount: 1 },
+  ]),
+  async (req, res) => {
+    if (!req.files?.archivo_excel?.[0]) {
+      return res.status(400).json({ error: 'Se requiere un archivo Excel' });
+    }
+
+    // Parsear Excel
+    let rows;
+    try {
+      const wb = XLSX.read(req.files.archivo_excel[0].buffer, { type: 'buffer' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+    } catch {
+      return res.status(400).json({ error: 'No se pudo leer el archivo Excel' });
+    }
+
+    if (!rows.length) return res.status(400).json({ error: 'El archivo Excel no contiene filas de datos' });
+
+    // IDs desde el formulario
+    const id_bloque_global  = parseInt(req.body.id_bloque)  || null;
+    const id_materia_global = parseInt(req.body.id_materia) || null;
+    const id_unidad_global  = parseInt(req.body.id_unidad)  || null;
+    const id_tema_global    = parseInt(req.body.id_tema)    || null;
+
+    if (!id_bloque_global)  return res.status(400).json({ error: 'id_bloque es requerido' });
+    if (!id_materia_global) return res.status(400).json({ error: 'id_materia es requerida' });
+
+    // Extraer imagenes del zip (nombre_archivo_lowercase -> dataURL)
+    const imagenes = {};
+    if (req.files?.archivo_zip?.[0]) {
+      try {
+        const zip = new AdmZip(req.files.archivo_zip[0].buffer);
+        const mimes = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
+        zip.getEntries().forEach(entry => {
+          if (entry.isDirectory) return;
+          const ext = entry.name.split('.').pop().toLowerCase();
+          const mime = mimes[ext];
+          if (!mime) return;
+          const b64 = `data:${mime};base64,${entry.getData().toString('base64')}`;
+          imagenes[entry.name.toLowerCase()] = b64;
+          imagenes[entry.name] = b64;
+        });
+      } catch {
+        return res.status(400).json({ error: 'No se pudo leer el archivo ZIP' });
+      }
+    }
+
+    function resolverImagen(val) {
+      if (!val) return null;
+      const v = String(val).trim();
+      if (!v) return null;
+      if (v.startsWith('data:')) return v;
+      return imagenes[v.toLowerCase()] || imagenes[v] || null;
+    }
+
+    function resolverOpcion(val) {
+      const img = resolverImagen(val);
+      if (img) return img;
+      const txt = String(val || '').trim();
+      return txt || null;
+    }
+
+    const client = await pool.connect();
+    const insertadas = [];
+    const errores = [];
+
+    try {
+      await client.query('BEGIN');
+
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const fila = i + 2;
+
+        try {
+          const descripcion = String(row.descripcion || '').trim();
+          if (!descripcion) { errores.push({ fila, error: 'descripcion vacia' }); continue; }
+
+          const respuesta_correcta = String(row.respuesta_correcta || '').trim().toUpperCase();
+          if (!['A', 'B', 'C', 'D'].includes(respuesta_correcta)) {
+            errores.push({ fila, error: `respuesta_correcta invalida: "${respuesta_correcta}" (debe ser A, B, C o D)` });
+            continue;
+          }
+
+          const opcion_a = resolverOpcion(row.opcion_a);
+          const opcion_b = resolverOpcion(row.opcion_b);
+          if (!opcion_a || !opcion_b) { errores.push({ fila, error: 'opcion_a y opcion_b son obligatorias' }); continue; }
+
+          const id_bloque  = id_bloque_global;
+          const id_materia = id_materia_global;
+          const id_unidad  = id_unidad_global;
+          const id_tema    = id_tema_global;
+          const url_imagen = resolverImagen(row.url_imagen);
+          const opcion_c      = resolverOpcion(row.opcion_c);
+          const opcion_d      = resolverOpcion(row.opcion_d);
+          const justificacion = String(row.justificacion || '').trim() || null;
+
+          const { rows: maxRows } = await client.query(
+            'SELECT COALESCE(MAX(id_pregunta_local), 0) + 1 AS next FROM preguntas WHERE id_bloque=$1 AND id_materia=$2',
+            [id_bloque, id_materia]
+          );
+
+          const { rows: inserted } = await client.query(
+            `INSERT INTO preguntas
+               (id_bloque, id_materia, id_unidad, id_tema, id_pregunta_local,
+                descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d,
+                respuesta_correcta, justificacion)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+             RETURNING id`,
+            [id_bloque, id_materia, id_unidad, id_tema, maxRows[0].next,
+             descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d,
+             respuesta_correcta, justificacion]
+          );
+          insertadas.push(inserted[0].id);
+        } catch (e) {
+          errores.push({ fila, error: e.message });
+        }
+      }
+
+      await client.query('COMMIT');
+      res.json({ insertadas: insertadas.length, errores: errores.length, detalle_errores: errores });
+    } catch (e) {
+      await client.query('ROLLBACK');
+      res.status(500).json({ error: 'Error al importar: ' + e.message });
+    } finally {
+      client.release();
+    }
+  }
+);
 
 module.exports = router;
