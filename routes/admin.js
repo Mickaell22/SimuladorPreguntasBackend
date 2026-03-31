@@ -446,7 +446,8 @@ router.get('/preguntas/exportar-xml', async (req, res) => {
   try {
     const { rows } = await pool.query(
       `SELECT p.id_pregunta_local, p.descripcion, p.url_imagen,
-              p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d, p.respuesta_correcta
+              p.opcion_a, p.opcion_b, p.opcion_c, p.opcion_d, p.respuesta_correcta,
+              p.justificacion, p.url_justificacion
        FROM preguntas p
        ${where}
        ORDER BY p.id_bloque, p.id_materia, p.id_pregunta_local`,
@@ -457,23 +458,25 @@ router.get('/preguntas/exportar-xml', async (req, res) => {
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
+    const imgTag = src => `&lt;img src="${src}" /&gt;`;
     const questions = rows.map(p => {
       const enunciado = p.url_imagen
-        ? `${esc(p.descripcion)}&lt;img src="${p.url_imagen}" /&gt;`
+        ? `${esc(p.descripcion)}${imgTag(p.url_imagen)}`
         : esc(p.descripcion);
+      const respCorr = (p.respuesta_correcta || '').toLowerCase();
       const answers = ['a', 'b', 'c', 'd'].map(l => {
         const texto = p[`opcion_${l}`] || '';
-        const fraction = p.respuesta_correcta === l ? '100' : '0';
-        const content = texto.startsWith('data:image')
-          ? `&lt;img src="${texto}" /&gt;`
-          : esc(texto);
+        const fraction = respCorr === l ? '100' : '0';
+        const content = texto.startsWith('data:image') ? imgTag(texto) : esc(texto);
         return `    <answer fraction="${fraction}" format="html"><text>${content}</text></answer>`;
       });
+      const justif = p.url_justificacion || p.justificacion || '';
+      const justifContent = justif.startsWith('data:image') ? imgTag(justif) : esc(justif);
       return `  <question type="multichoice">
     <name><text>${esc((p.descripcion || '').slice(0, 80))}</text></name>
     <questiontext format="html"><text>${enunciado}</text></questiontext>
     <defaultgrade>1.0000000</defaultgrade>
-    <generalfeedback format="html"><text></text></generalfeedback>
+    <generalfeedback format="html"><text>${justifContent}</text></generalfeedback>
     <single>true</single>
     <shuffleanswers>1</shuffleanswers>
     <answernumbering>abc</answernumbering>
@@ -596,13 +599,14 @@ router.post('/preguntas/importar-lote', async (req, res) => {
         const { rows } = await client.query(
           `INSERT INTO preguntas
              (id_bloque, id_materia, id_unidad, id_tema, id_pregunta_local,
-              descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+              descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d, respuesta_correcta,
+              justificacion)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            RETURNING id`,
           [id_bloque, id_materia, id_unidad || null, id_tema || null, maxRows[0].next,
            p.descripcion.trim(), p.url_imagen || null,
            p.opcion_a, p.opcion_b, p.opcion_c || null, p.opcion_d || null,
-           p.respuesta_correcta || null]
+           p.respuesta_correcta || null, p.justificacion || null]
         );
         importadas.push(rows[0].id);
       } catch (e) {
@@ -749,7 +753,7 @@ router.post('/excel/importar',
           const url_imagen = resolverImagen(row.url_imagen);
           const opcion_c      = resolverOpcion(row.opcion_c);
           const opcion_d      = resolverOpcion(row.opcion_d);
-          const justificacion = String(row.justificacion || '').trim() || null;
+          const justificacion = resolverOpcion(row.justificacion);
 
           const { rows: maxRows } = await client.query(
             'SELECT COALESCE(MAX(id_pregunta_local), 0) + 1 AS next FROM preguntas WHERE id_bloque=$1 AND id_materia=$2',
