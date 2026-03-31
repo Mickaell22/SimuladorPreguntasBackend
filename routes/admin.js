@@ -587,10 +587,11 @@ router.post('/preguntas/importar-lote', async (req, res) => {
 
     for (let i = 0; i < preguntas.length; i++) {
       const p = preguntas[i];
-      try {
-        if (!p.descripcion?.trim()) { errores.push({ indice: i + 1, motivo: 'descripcion vacia' }); continue; }
-        if (!p.opcion_a || !p.opcion_b)       { errores.push({ indice: i + 1, motivo: 'minimo 2 opciones requeridas' }); continue; }
+      if (!p.descripcion?.trim()) { errores.push({ indice: i + 1, motivo: 'descripcion vacia' }); continue; }
+      if (!p.opcion_a || !p.opcion_b) { errores.push({ indice: i + 1, motivo: 'minimo 2 opciones requeridas' }); continue; }
 
+      await client.query('SAVEPOINT sp_pregunta');
+      try {
         const { rows: maxRows } = await client.query(
           'SELECT COALESCE(MAX(id_pregunta_local), 0) + 1 AS next FROM preguntas WHERE id_bloque=$1 AND id_materia=$2',
           [id_bloque, id_materia]
@@ -608,8 +609,10 @@ router.post('/preguntas/importar-lote', async (req, res) => {
            p.opcion_a, p.opcion_b, p.opcion_c || null, p.opcion_d || null,
            p.respuesta_correcta || null, p.justificacion || null]
         );
+        await client.query('RELEASE SAVEPOINT sp_pregunta');
         importadas.push(rows[0].id);
       } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT sp_pregunta');
         errores.push({ indice: i + 1, motivo: e.message });
       }
     }
@@ -732,29 +735,30 @@ router.post('/excel/importar',
         const row = rows[i];
         const fila = i + 2;
 
+        const descripcion = String(row.descripcion || '').trim();
+        if (!descripcion) { errores.push({ fila, error: 'descripcion vacia' }); continue; }
+
+        const respuesta_correcta = String(row.respuesta_correcta || '').trim().toUpperCase();
+        if (!['A', 'B', 'C', 'D'].includes(respuesta_correcta)) {
+          errores.push({ fila, error: `respuesta_correcta invalida: "${respuesta_correcta}" (debe ser A, B, C o D)` });
+          continue;
+        }
+
+        const opcion_a = resolverOpcion(row.opcion_a);
+        const opcion_b = resolverOpcion(row.opcion_b);
+        if (!opcion_a || !opcion_b) { errores.push({ fila, error: 'opcion_a y opcion_b son obligatorias' }); continue; }
+
+        const id_bloque  = id_bloque_global;
+        const id_materia = id_materia_global;
+        const id_unidad  = id_unidad_global;
+        const id_tema    = id_tema_global;
+        const url_imagen = resolverImagen(row.url_imagen);
+        const opcion_c      = resolverOpcion(row.opcion_c);
+        const opcion_d      = resolverOpcion(row.opcion_d);
+        const justificacion = resolverOpcion(row.justificacion);
+
+        await client.query('SAVEPOINT sp_pregunta');
         try {
-          const descripcion = String(row.descripcion || '').trim();
-          if (!descripcion) { errores.push({ fila, error: 'descripcion vacia' }); continue; }
-
-          const respuesta_correcta = String(row.respuesta_correcta || '').trim().toUpperCase();
-          if (!['A', 'B', 'C', 'D'].includes(respuesta_correcta)) {
-            errores.push({ fila, error: `respuesta_correcta invalida: "${respuesta_correcta}" (debe ser A, B, C o D)` });
-            continue;
-          }
-
-          const opcion_a = resolverOpcion(row.opcion_a);
-          const opcion_b = resolverOpcion(row.opcion_b);
-          if (!opcion_a || !opcion_b) { errores.push({ fila, error: 'opcion_a y opcion_b son obligatorias' }); continue; }
-
-          const id_bloque  = id_bloque_global;
-          const id_materia = id_materia_global;
-          const id_unidad  = id_unidad_global;
-          const id_tema    = id_tema_global;
-          const url_imagen = resolverImagen(row.url_imagen);
-          const opcion_c      = resolverOpcion(row.opcion_c);
-          const opcion_d      = resolverOpcion(row.opcion_d);
-          const justificacion = resolverOpcion(row.justificacion);
-
           const { rows: maxRows } = await client.query(
             'SELECT COALESCE(MAX(id_pregunta_local), 0) + 1 AS next FROM preguntas WHERE id_bloque=$1 AND id_materia=$2',
             [id_bloque, id_materia]
@@ -771,8 +775,10 @@ router.post('/excel/importar',
              descripcion, url_imagen, opcion_a, opcion_b, opcion_c, opcion_d,
              respuesta_correcta, justificacion]
           );
+          await client.query('RELEASE SAVEPOINT sp_pregunta');
           insertadas.push(inserted[0].id);
         } catch (e) {
+          await client.query('ROLLBACK TO SAVEPOINT sp_pregunta');
           errores.push({ fila, error: e.message });
         }
       }
