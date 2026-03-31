@@ -738,9 +738,9 @@ router.post('/excel/importar',
         const descripcion = String(row.descripcion || '').trim();
         if (!descripcion) { errores.push({ fila, error: 'descripcion vacia' }); continue; }
 
-        const respuesta_correcta = String(row.respuesta_correcta || '').trim().toUpperCase();
-        if (!['A', 'B', 'C', 'D'].includes(respuesta_correcta)) {
-          errores.push({ fila, error: `respuesta_correcta invalida: "${respuesta_correcta}" (debe ser A, B, C o D)` });
+        const respuesta_correcta = String(row.respuesta_correcta || '').trim().toLowerCase();
+        if (!['a', 'b', 'c', 'd'].includes(respuesta_correcta)) {
+          errores.push({ fila, error: `respuesta_correcta invalida: "${respuesta_correcta}" (debe ser a, b, c o d)` });
           continue;
         }
 
