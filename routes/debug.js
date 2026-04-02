@@ -1,8 +1,14 @@
 const router = require('express').Router();
 const pool = require('../db');
+const { authAdmin } = require('../middleware/auth');
 
-// GET /api/debug/imagenes — solo disponible en modo DEBUG
-router.get('/debug/imagenes', async (req, res) => {
+// GET /api/debug/status — publico, solo indica si el modo debug esta activo
+router.get('/debug/status', (req, res) => {
+  res.json({ active: process.env.DEBUG === 'true' });
+});
+
+// GET /api/debug/imagenes — solo disponible en modo DEBUG, requiere rol admin
+router.get('/debug/imagenes', authAdmin, async (req, res) => {
   if (process.env.DEBUG !== 'true') return res.status(403).json({ error: 'Solo disponible en modo debug' });
   try {
     const result = await pool.query(
