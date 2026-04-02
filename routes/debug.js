@@ -20,8 +20,10 @@ router.get('/debug/imagenes', async (req, res) => {
           OR p.opcion_d LIKE 'data:image%'
        ORDER BY p.id_bloque, p.id_materia, p.id_pregunta_local`
     );
+    console.log(`[DEBUG] /debug/imagenes — ${result.rows.length} preguntas con imagen encontradas`);
     res.json(result.rows);
-  } catch {
+  } catch (err) {
+    console.error('[DEBUG] /debug/imagenes error:', err.message);
     res.status(500).json({ error: 'Error al obtener preguntas con imagen' });
   }
 });

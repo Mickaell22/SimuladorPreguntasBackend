@@ -36,6 +36,12 @@ app.use('/api/admin', require('./routes/admin'));
 app.listen(PORT, () => {
   console.log(`Backend corriendo en http://localhost:${PORT}`);
   if (process.env.DEBUG === 'true') {
-    console.log('[DEBUG] Modo debug activo: examen carga todas las preguntas en orden');
+    console.log('[DEBUG] ============================================');
+    console.log('[DEBUG] Modo DEBUG activo');
+    console.log('[DEBUG]   - Examen: todas las preguntas en orden');
+    console.log('[DEBUG]   - Sidebar navegable + boton Anterior');
+    console.log('[DEBUG]   - AntiCheat desactivado en frontend');
+    console.log('[DEBUG]   - GET /api/debug/imagenes disponible');
+    console.log('[DEBUG] ============================================');
   }
 });

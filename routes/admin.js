@@ -17,7 +17,7 @@ router.get('/bloques', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM bloques ORDER BY id_bloque');
     res.json(rows);
-  } catch { res.status(500).json({ error: 'Error al obtener bloques' }); }
+  } catch (err) { console.error('[GET bloques]', err.message); res.status(500).json({ error: 'Error al obtener bloques' }); }
 });
 
 router.post('/bloques', async (req, res) => {
@@ -54,7 +54,7 @@ router.put('/bloques/:id', async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Bloque no encontrado' });
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al actualizar bloque' }); }
+  } catch (err) { console.error('[PUT bloques]', err.message); res.status(500).json({ error: 'Error al actualizar bloque' }); }
 });
 
 router.delete('/bloques/:id', async (req, res) => {
@@ -112,7 +112,7 @@ router.get('/info-bloque/:id', async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Info no encontrada' });
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al obtener info del bloque' }); }
+  } catch (err) { console.error('[GET info-bloque]', err.message); res.status(500).json({ error: 'Error al obtener info del bloque' }); }
 });
 
 router.put('/info-bloque/:id', async (req, res) => {
@@ -127,7 +127,7 @@ router.put('/info-bloque/:id', async (req, res) => {
     if (!rows.length) return res.status(404).json({ error: 'Info no encontrada' });
     invalidarCacheExamen();
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al actualizar info del bloque' }); }
+  } catch (err) { console.error('[PUT info-bloque]', err.message); res.status(500).json({ error: 'Error al actualizar info del bloque' }); }
 });
 
 // ─── MATERIAS ──────────────────────────────────────────────────────────────────
@@ -136,7 +136,7 @@ router.get('/materias', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT * FROM materias ORDER BY id_materia');
     res.json(rows);
-  } catch { res.status(500).json({ error: 'Error al obtener materias' }); }
+  } catch (err) { console.error('[GET materias]', err.message); res.status(500).json({ error: 'Error al obtener materias' }); }
 });
 
 router.post('/materias', async (req, res) => {
@@ -148,7 +148,7 @@ router.post('/materias', async (req, res) => {
       [nombre]
     );
     res.status(201).json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al crear materia' }); }
+  } catch (err) { console.error('[POST materias]', err.message); res.status(500).json({ error: 'Error al crear materia' }); }
 });
 
 router.put('/materias/:id', async (req, res) => {
@@ -161,7 +161,7 @@ router.put('/materias/:id', async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Materia no encontrada' });
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al actualizar materia' }); }
+  } catch (err) { console.error('[PUT materias]', err.message); res.status(500).json({ error: 'Error al actualizar materia' }); }
 });
 
 router.delete('/materias/:id', async (req, res) => {
@@ -169,7 +169,7 @@ router.delete('/materias/:id', async (req, res) => {
     const { rowCount } = await pool.query('DELETE FROM materias WHERE id_materia = $1', [req.params.id]);
     if (!rowCount) return res.status(404).json({ error: 'Materia no encontrada' });
     res.json({ ok: true });
-  } catch { res.status(500).json({ error: 'Error al eliminar materia' }); }
+  } catch (err) { console.error('[DELETE materias]', err.message); res.status(500).json({ error: 'Error al eliminar materia' }); }
 });
 
 // GET /api/admin/materias-por-bloque/:idMateria
@@ -180,7 +180,7 @@ router.get('/materias-por-bloque/:idMateria', async (req, res) => {
       [req.params.idMateria]
     );
     res.json(rows.map(r => r.id_bloque));
-  } catch { res.status(500).json({ error: 'Error al obtener relaciones' }); }
+  } catch (err) { console.error('[GET materias-por-bloque]', err.message); res.status(500).json({ error: 'Error al obtener relaciones' }); }
 });
 
 // PUT /api/admin/materias-por-bloque/:idMateria
@@ -273,7 +273,7 @@ router.get('/unidades', async (req, res) => {
       [...params, limit, offset]
     );
     res.json({ total: parseInt(countRes.rows[0].count), page: parseInt(page), rows });
-  } catch { res.status(500).json({ error: 'Error al obtener unidades' }); }
+  } catch (err) { console.error('[GET unidades]', err.message); res.status(500).json({ error: 'Error al obtener unidades' }); }
 });
 
 router.post('/unidades', async (req, res) => {
@@ -289,7 +289,7 @@ router.post('/unidades', async (req, res) => {
       [id_bloque, id_materia, nombre]
     );
     res.status(201).json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al crear unidad' }); }
+  } catch (err) { console.error('[POST unidades]', err.message); res.status(500).json({ error: 'Error al crear unidad' }); }
 });
 
 // Clave compuesta: :ib (id_bloque) :im (id_materia) :iu (id_unidad)
@@ -306,7 +306,7 @@ router.put('/unidades/:ib/:im/:iu', async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Unidad no encontrada' });
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al actualizar unidad' }); }
+  } catch (err) { console.error('[PUT unidades]', err.message); res.status(500).json({ error: 'Error al actualizar unidad' }); }
 });
 
 router.delete('/unidades/:ib/:im/:iu', async (req, res) => {
@@ -318,7 +318,7 @@ router.delete('/unidades/:ib/:im/:iu', async (req, res) => {
     );
     if (!rowCount) return res.status(404).json({ error: 'Unidad no encontrada' });
     res.json({ ok: true });
-  } catch { res.status(500).json({ error: 'Error al eliminar unidad' }); }
+  } catch (err) { console.error('[DELETE unidades]', err.message); res.status(500).json({ error: 'Error al eliminar unidad' }); }
 });
 
 // ─── TEMAS ─────────────────────────────────────────────────────────────────────
@@ -346,7 +346,7 @@ router.get('/temas', async (req, res) => {
       [...params, limit, offset]
     );
     res.json({ total: parseInt(countRes.rows[0].count), page: parseInt(page), rows });
-  } catch { res.status(500).json({ error: 'Error al obtener temas' }); }
+  } catch (err) { console.error('[GET temas]', err.message); res.status(500).json({ error: 'Error al obtener temas' }); }
 });
 
 router.post('/temas', async (req, res) => {
@@ -362,7 +362,7 @@ router.post('/temas', async (req, res) => {
       [id_bloque, id_materia, id_unidad, nombre]
     );
     res.status(201).json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al crear tema' }); }
+  } catch (err) { console.error('[POST temas]', err.message); res.status(500).json({ error: 'Error al crear tema' }); }
 });
 
 // Clave compuesta: :ib :im :iu :it
@@ -379,7 +379,7 @@ router.put('/temas/:ib/:im/:iu/:it', async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Tema no encontrado' });
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al actualizar tema' }); }
+  } catch (err) { console.error('[PUT temas]', err.message); res.status(500).json({ error: 'Error al actualizar tema' }); }
 });
 
 router.delete('/temas/:ib/:im/:iu/:it', async (req, res) => {
@@ -391,7 +391,7 @@ router.delete('/temas/:ib/:im/:iu/:it', async (req, res) => {
     );
     if (!rowCount) return res.status(404).json({ error: 'Tema no encontrado' });
     res.json({ ok: true });
-  } catch { res.status(500).json({ error: 'Error al eliminar tema' }); }
+  } catch (err) { console.error('[DELETE temas]', err.message); res.status(500).json({ error: 'Error al eliminar tema' }); }
 });
 
 // ─── PREGUNTAS ─────────────────────────────────────────────────────────────────
@@ -431,7 +431,7 @@ router.get('/preguntas', async (req, res) => {
       [...params, limit, offset]
     );
     res.json({ total: parseInt(countRes.rows[0].count), page: parseInt(page), rows });
-  } catch (err) { res.status(500).json({ error: 'Error al obtener preguntas' }); }
+  } catch (err) { console.error('[GET preguntas]', err.message); res.status(500).json({ error: 'Error al obtener preguntas' }); }
 });
 
 router.get('/preguntas/exportar-xml', async (req, res) => {
@@ -499,7 +499,7 @@ router.get('/preguntas/:id', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM preguntas WHERE id = $1', [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: 'Pregunta no encontrada' });
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al obtener pregunta' }); }
+  } catch (err) { console.error('[GET preguntas/:id]', err.message); res.status(500).json({ error: 'Error al obtener pregunta' }); }
 });
 
 router.post('/preguntas', async (req, res) => {
@@ -558,7 +558,7 @@ router.put('/preguntas/:id', async (req, res) => {
     );
     if (!rows.length) return res.status(404).json({ error: 'Pregunta no encontrada' });
     res.json(rows[0]);
-  } catch { res.status(500).json({ error: 'Error al actualizar pregunta' }); }
+  } catch (err) { console.error('[PUT preguntas]', err.message); res.status(500).json({ error: 'Error al actualizar pregunta' }); }
 });
 
 router.delete('/preguntas/:id', async (req, res) => {
@@ -566,7 +566,7 @@ router.delete('/preguntas/:id', async (req, res) => {
     const { rowCount } = await pool.query('DELETE FROM preguntas WHERE id = $1', [req.params.id]);
     if (!rowCount) return res.status(404).json({ error: 'Pregunta no encontrada' });
     res.json({ ok: true });
-  } catch { res.status(500).json({ error: 'Error al eliminar pregunta' }); }
+  } catch (err) { console.error('[DELETE preguntas]', err.message); res.status(500).json({ error: 'Error al eliminar pregunta' }); }
 });
 
 // ─── IMPORTAR LOTE ─────────────────────────────────────────────────────────────
@@ -589,6 +589,9 @@ router.post('/preguntas/importar-lote', async (req, res) => {
       const p = preguntas[i];
       if (!p.descripcion?.trim()) { errores.push({ indice: i + 1, motivo: 'descripcion vacia' }); continue; }
       if (!p.opcion_a || !p.opcion_b) { errores.push({ indice: i + 1, motivo: 'minimo 2 opciones requeridas' }); continue; }
+      if (!['a', 'b', 'c', 'd'].includes((p.respuesta_correcta || '').toLowerCase())) {
+        errores.push({ indice: i + 1, motivo: `respuesta_correcta invalida: "${p.respuesta_correcta}" (debe ser a, b, c o d)` }); continue;
+      }
 
       await client.query('SAVEPOINT sp_pregunta');
       try {
@@ -607,7 +610,7 @@ router.post('/preguntas/importar-lote', async (req, res) => {
           [id_bloque, id_materia, id_unidad || null, id_tema || null, maxRows[0].next,
            p.descripcion.trim(), p.url_imagen || null,
            p.opcion_a, p.opcion_b, p.opcion_c || null, p.opcion_d || null,
-           p.respuesta_correcta || null, p.justificacion || null]
+           p.respuesta_correcta.toLowerCase(), p.justificacion || null]
         );
         await client.query('RELEASE SAVEPOINT sp_pregunta');
         importadas.push(rows[0].id);

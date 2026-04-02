@@ -97,6 +97,9 @@ router.get('/examen/iniciar', async (req, res) => {
   const { idBloque, todo, idMateria, cantidad: cantidadParam, idUnidades: idUnidadesParam } = req.query;
 
   const isDebug = process.env.DEBUG === 'true';
+  if (isDebug) {
+    console.log(`[DEBUG] /examen/iniciar — bloque=${idBloque} materia=${idMateria || '-'} unidades=${idUnidadesParam || '-'} todo=${todo || '-'}`);
+  }
   const idUnidades = idUnidadesParam
     ? idUnidadesParam.split(',').map(n => parseInt(n, 10)).filter(n => !isNaN(n))
     : null;
@@ -119,6 +122,7 @@ router.get('/examen/iniciar', async (req, res) => {
         const ids = result.rows.map(r => r.id);
         const meta = {};
         result.rows.forEach(r => { meta[r.id] = { idMateria: r.id_materia, local: r.id_pregunta_local }; });
+        console.log(`[DEBUG] Materia ${idMateria}: ${ids.length} preguntas${idUnidades?.length ? ` (${idUnidades.length} unidades)` : ''}`);
         return res.json({ ids, total: ids.length, debug: true, meta });
       }
 
@@ -146,6 +150,7 @@ router.get('/examen/iniciar', async (req, res) => {
       const ids = result.rows.map(r => r.id);
       const meta = {};
       result.rows.forEach(r => { meta[r.id] = { idMateria: r.id_materia, local: r.id_pregunta_local }; });
+      console.log(`[DEBUG] Bloque ${idBloque} completo (todo=true): ${ids.length} preguntas en orden`);
       return res.json({ ids, total: ids.length, debug: true, meta });
     }
 
@@ -162,6 +167,11 @@ router.get('/examen/iniciar', async (req, res) => {
     if (isDebug) {
       const meta = {};
       grupos.forEach(g => g.rows.forEach(r => { meta[r.id] = { idMateria: r.id_materia, local: r.id_pregunta_local }; }));
+      console.log(`[DEBUG] Bloque ${idBloque} aleatorio: ${ids.length} preguntas (${grupos.length} materias)`);
+      grupos.forEach((g, i) => {
+        const idMat = config[i]?.idMateria;
+        console.log(`[DEBUG]   materia ${idMat}: ${g.rows.length} preguntas`);
+      });
       return res.json({ ids, total: ids.length, debug: true, meta });
     }
 
@@ -261,6 +271,10 @@ router.post('/verificar', authOpcional, async (req, res) => {
       ));
     }
 
+    if (process.env.DEBUG === 'true') {
+      const uid = req.usuario ? `usuario ${req.usuario.id}` : 'anonimo';
+      console.log(`[DEBUG] /verificar — ${uid} bloque=${idBloque || '-'} total=${respuestas.length} correctas=${correctas} puntaje=${puntaje}`);
+    }
     res.json({ total: respuestas.length, correctas, puntaje, detalle });
   } catch (err) {
     console.error('[verificar] Error:', err.message);
