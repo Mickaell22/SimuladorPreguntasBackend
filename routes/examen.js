@@ -37,7 +37,7 @@ router.get('/bloques', async (req, res) => {
 // GET /api/bloques-info  — bloques con materias, conteo real de preguntas y carreras (desde informacion_bloque)
 router.get('/bloques-info', async (req, res) => {
   try {
-    const [{ rows: infoRows }, { rows: materiasRows }] = await Promise.all([
+    const [{ rows: infoRows }, { rows: materiasRows }, { rows: conteoRows }] = await Promise.all([
       pool.query(
         `SELECT b.id_bloque, b.nombre, ib.carreras, ib.config_materias
          FROM informacion_bloque ib
@@ -45,23 +45,34 @@ router.get('/bloques-info', async (req, res) => {
          ORDER BY b.id_bloque`
       ),
       pool.query('SELECT id_materia, nombre FROM simulador.materias'),
+      pool.query(
+        `SELECT id_bloque, id_materia, COUNT(*)::int AS total_preguntas
+         FROM simulador.preguntas GROUP BY id_bloque, id_materia`
+      ),
     ]);
 
-    // mapa nombre (lowercase) → id_materia para detectar materias reales
     const materiasMap = Object.fromEntries(
       materiasRows.map(m => [m.nombre.toLowerCase(), m.id_materia])
     );
+    const conteoMap = {};
+    for (const r of conteoRows) {
+      conteoMap[`${r.id_bloque}-${r.id_materia}`] = r.total_preguntas;
+    }
 
     const bloques = infoRows.map(row => ({
       id: row.id_bloque,
       nombre: row.nombre,
       carreras: row.carreras,
-      materias: row.config_materias.map(m => ({
-        id: materiasMap[m.nombre.toLowerCase()] ?? null,
-        nombre: m.nombre,
-        cantidad: m.cantidad,
-        porcentaje: m.porcentaje,
-      })),
+      materias: row.config_materias.map(m => {
+        const idMateria = materiasMap[m.nombre.toLowerCase()] ?? null;
+        return {
+          id: idMateria,
+          nombre: m.nombre,
+          cantidad: m.cantidad ?? 0,
+          porcentaje: m.porcentaje ?? 0,
+          total_preguntas: idMateria ? (conteoMap[`${row.id_bloque}-${idMateria}`] ?? 0) : 0,
+        };
+      }),
     }));
 
     res.json(bloques);
